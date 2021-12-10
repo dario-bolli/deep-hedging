@@ -1,4 +1,6 @@
-params:
+data_params:
+  seed: 0
+
   # Simulated data (monte carlo simulation) parameters
   N: 30 # Number of time steps (in days)
 
@@ -7,7 +9,7 @@ params:
   risk_free: 0.0 # Risk-free rate
   dividend: 0.0 # Continuous dividend yield
 
-  Ktrain: 1*(10**5) # Size of training sample.
+  Ktrain: 100000 # Size of training sample. 1*(10**5)
   Ktest_ratio: 0.2 # Fraction of training sample as testing sample.
 
   # Proportional transaction cost.
@@ -15,6 +17,8 @@ params:
 
   # Information set (in string) : Choose from: S, log_S, normalized_log_S (by S0)
   information_set: normalized_log_S
+
+model_params:
 
   # Loss function CVaR or Entropy
   loss_type: "CVaR"
