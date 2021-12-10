@@ -1,0 +1,42 @@
+params:
+  # Simulated data (monte carlo simulation) parameters
+  N: 30 # Number of time steps (in days)
+
+  S0: 100.0 # Stock price at time = 0
+  sigma: 0.2 # Implied volatility
+  risk_free: 0.0 # Risk-free rate
+  dividend: 0.0 # Continuous dividend yield
+
+  Ktrain: 1*(10**5) # Size of training sample.
+  Ktest_ratio: 0.2 # Fraction of training sample as testing sample.
+
+  # Proportional transaction cost.
+  epsilon: 0.0
+
+  # Information set (in string) : Choose from: S, log_S, normalized_log_S (by S0)
+  information_set: normalized_log_S
+
+  # Loss function CVaR or Entropy
+  loss_type: "CVaR"
+  loss_param: 1.0
+
+  # Neural network (NN) structure
+  m: 15 # Number of neurons in each hidden layer.
+  d: 1 # Number of hidden layers (Note including input nor output layer)
+
+  # Neural network training parameters
+  lr: 1e-2 # Learning rate
+  batch_size: 256 # Batch size
+  epochs: 50 # Number of epochs
+
+  # Other parameters
+  use_batch_norm: False
+  kernel_initializer: he_uniform
+
+  activation_dense: relu # relu, leaky_relu, sigmoid,
+  activation_output: linear # linear, sigmoid
+  final_period_cost: False
+
+  delta_constraint: (0.0, 1.0)
+  share_stretegy_across_time: False
+  cost_structure: proportional
