@@ -32,13 +32,16 @@ if __name__ == '__main__':
     # Simulate the stock price process.
     dataGenerator = DataGenerator(data_params)
     S = dataGenerator.simulate_stock_prices()
+    print(S.shape)
 
     # Assemble the dataset for training and testing.
     # Structure of data:
     #   1) Trade set: [S]
     #   2) Information set: [S]
     #   3) payoff (dim = 1)
-    training_dataset = dataGenerator.assemble_data()
+    training_dataset = dataGenerator.assemble_data()  # HAVE TO CALL SIMULATE_STOCK_PRICES FIRST, TO CHANGE
+    print(type(training_dataset))
+    """
 
     # Compute Black-Scholes prices for benchmarking.
     self.price_BS, self.delta_BS, self.PnL_BS = self.get_Black_Scholes_Prices()
@@ -56,3 +59,4 @@ if __name__ == '__main__':
     model = Deep_Hedging_Model(model_params)
 
     self.submodel = self.Define_DH_Delta_Strategy_Model()
+    """

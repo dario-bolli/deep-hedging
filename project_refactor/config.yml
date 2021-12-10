@@ -5,6 +5,7 @@ data_params:
   N: 30 # Number of time steps (in days)
 
   S0: 100.0 # Stock price at time = 0
+  strike: 100
   sigma: 0.2 # Implied volatility
   risk_free: 0.0 # Risk-free rate
   dividend: 0.0 # Continuous dividend yield
