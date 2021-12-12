@@ -1,7 +1,7 @@
 import QuantLib as ql
 import numpy as np
 from scipy import stats
-from stochastic_processes import BlackScholesProcess
+from blackscholes_process import BlackScholesProcess
 
 # Assume continuous dividend with flat term-structure and flat dividend structure.
 class EuropeanCall:

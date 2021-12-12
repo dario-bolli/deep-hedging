@@ -20,6 +20,10 @@ data_params:
   information_set: normalized_log_S
 
 model_params:
+  # Had to add these ones later on, not clean but works
+  N: 30 # Number of time steps (in days)
+  risk_free: 0.0 # Risk-free rate
+  epsilon: 0.0 # Proportional transaction cost.
 
   # Loss function CVaR or Entropy
   loss_type: "CVaR"

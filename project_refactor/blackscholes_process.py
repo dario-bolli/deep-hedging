@@ -53,3 +53,5 @@ class BlackScholesProcess:
             path = sample_path.value()
             value[i, :] = np.array(path[0])
         return value
+
+

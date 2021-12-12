@@ -6,6 +6,8 @@ from sklearn import model_selection
 
 # TODO REMOVE BELOW
 # Specify the day (from today) for the delta plot.
+from EuropeanCall import EuropeanCall
+
 delta_plot_day = 15
 
 # European call option (short).
@@ -121,3 +123,36 @@ class DataGenerator:
         # Convert the training sample into tf.Data format (same as xtrain).
         training_dataset = tf.data.Dataset.from_tensor_slices(tuple(self.xtrain))
         return training_dataset.cache()
+
+    def get_blackscholes_prices(self):
+        # Obtain Black-Scholes price, delta, and PnL
+        call = EuropeanCall()
+        price_BS = call.get_BS_price(
+            S=self.S_test[0],
+            sigma=self.sigma,
+            risk_free=self.risk_free,
+            dividend=self.dividend,
+            K=self.strike,
+            exercise_date=self.maturity_date,
+            calculation_date=calculation_date,
+            day_count=day_count,
+            dt=self.dt)
+        delta_BS = call.get_BS_delta(
+            S=self.S_test[0],
+            sigma=self.sigma,
+            risk_free=self.risk_free,
+            dividend=self.dividend,
+            K=self.strike,
+            exercise_date=self.maturity_date,
+            calculation_date=calculation_date,
+            day_count=day_count,
+            dt=self.dt)
+        PnL_BS = call.get_BS_PnL(S=self.S_test[0],
+                                 payoff=self.payoff_func(self.S_test[0][:,
+                                                                        -1]),
+                                 delta=delta_BS,
+                                 dt=self.dt,
+                                 risk_free=self.risk_free,
+                                 final_period_cost=final_period_cost,
+                                 epsilon=self.epsilon)
+        return price_BS, delta_BS, PnL_BS

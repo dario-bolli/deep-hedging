@@ -10,13 +10,13 @@ import sys
 import os
 import tensorflow as tf
 import yaml
-from deep_hedging_model import Deep_Hedging_Model
-from deep_hedging_model import Delta_SubModel
-
+from deep_hedging_model import SimpleDeepHedgingModel
 from data_generator import DataGenerator
-
+from entropy import Entropy
 
 # Add the parent directory to the search paths to import the libraries.
+
+
 dir_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, "/".join([dir_path, ".."]))
 
@@ -28,6 +28,8 @@ if __name__ == '__main__':
     config = yaml.safe_load(open("config.yml"))
     data_params = config['data_params']
     model_params = config['model_params']
+
+    loss_param = model_params['loss_param']
 
     # Simulate the stock price process.
     dataGenerator = DataGenerator(data_params)
@@ -41,22 +43,16 @@ if __name__ == '__main__':
     #   3) payoff (dim = 1)
     training_dataset = dataGenerator.assemble_data()  # HAVE TO CALL SIMULATE_STOCK_PRICES FIRST, TO CHANGE
     print(type(training_dataset))
-    """
 
     # Compute Black-Scholes prices for benchmarking.
-    self.price_BS, self.delta_BS, self.PnL_BS = self.get_Black_Scholes_Prices()
+    price_BS, delta_BS, PnL_BS = dataGenerator.get_blackscholes_prices()
 
     # Compute the loss value for Black-Scholes PnL
-    self.loss_BS = Entropy(
-        self.PnL_BS,
+    loss_BS = Entropy(
+        PnL_BS,
         tf.Variable(0.0),
-        self.loss_param).numpy()
+        loss_param).numpy()
 
     # Define model and sub-models
-    self.model = self.Define_DH_model()
-
-    # Setup and compile the model
-    model = Deep_Hedging_Model(model_params)
-
-    self.submodel = self.Define_DH_Delta_Strategy_Model()
-    """
+    model = SimpleDeepHedgingModel(model_params)
+    submodel = model.dh_delta_strategy_model()
