@@ -24,6 +24,10 @@ model_params:
   N: 30 # Number of time steps (in days)
   risk_free: 0.0 # Risk-free rate
   epsilon: 0.0 # Proportional transaction cost.
+  days_from_today: 15
+  strategy_type: simple
+  share_strategy_across_time: False
+  initial_wealth: 0
 
   # Loss function CVaR or Entropy
   loss_type: "CVaR"

@@ -10,7 +10,7 @@ import sys
 import os
 import tensorflow as tf
 import yaml
-from deep_hedging_model import SimpleDeepHedgingModel
+from deep_hedging_model import SimpleDeepHedgingModel, DHDeltaStrategyModel
 from data_generator import DataGenerator
 from entropy import Entropy
 
@@ -53,6 +53,8 @@ if __name__ == '__main__':
         tf.Variable(0.0),
         loss_param).numpy()
 
+    dataGenerator.get_dt()
+
     # Define model and sub-models
-    model = SimpleDeepHedgingModel(model_params)
-    submodel = model.dh_delta_strategy_model()
+    model = SimpleDeepHedgingModel(model_params, dt)
+    submodel = DHDeltaStrategyModel(model_params)
