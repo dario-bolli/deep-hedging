@@ -15,6 +15,7 @@ from tensorflow.keras.optimizers import Adam
 from pyqtgraph.Qt import QtCore
 
 from loss_metrics import Entropy
+from loss_metrics import CVaR
 
 
 # Reducing learning rate
@@ -49,6 +50,7 @@ class DHworker(QtCore.QThread):
                             model=None,
                             submodel=None,
                             strategy_type=None,
+                            loss_type=None,
                             loss_param=None,
                             learning_rate=None,
                             xtest=None,
@@ -62,6 +64,7 @@ class DHworker(QtCore.QThread):
         self.batch_size = batch_size
         self.model = model
         self.submodel = submodel
+        self.loss_type = loss_type
         self.loss_param = loss_param
         self.initial_price_BS = initial_price_BS
         self.width = width
@@ -148,8 +151,11 @@ class DHworker(QtCore.QThread):
                     # Reduce learning rates and Early Stopping are based on
                     # in-sample losses calculated once per epoch.
                     in_sample_wealth = model_func(self.xtrain)
-                    in_sample_loss = Entropy(
-                        in_sample_wealth, certainty_equiv, self.loss_param)
+
+                    if self.loss_type == "CVaR":
+                        in_sample_loss = CVaR(in_sample_wealth, certainty_equiv, self.loss_param)
+                    else:  # Default to entropy
+                        in_sample_loss = Entropy(in_sample_wealth, certainty_equiv, self.loss_param)
 
                     if num_epoch >= 1:
                         print(("The deep-hedging price is {:0.4f} after " +
@@ -199,7 +205,10 @@ class DHworker(QtCore.QThread):
                 # Record gradient
                 with tf.GradientTape() as tape:
                     wealth = model_func(mini_batch)
-                    loss = Entropy(wealth, certainty_equiv, self.loss_param)
+                    if self.loss_type == "CVaR":
+                        loss = CVaR(wealth, certainty_equiv, self.loss_param)
+                    else:
+                        loss = Entropy(wealth, certainty_equiv, self.loss_param)
 
                 oos_wealth = model_func(self.xtest)
                 PnL_DH = oos_wealth.numpy().squeeze()  # Out-of-sample
@@ -224,8 +233,11 @@ class DHworker(QtCore.QThread):
                     zip(grads, self.model.trainable_weights))
 
                 # Compute Out-of-Sample Loss
-                oos_loss = Entropy(
-                    oos_wealth, certainty_equiv, self.loss_param)
+
+                if self.loss_type == "CVaR":
+                    oos_loss = CVaR(oos_wealth, certainty_equiv, self.loss_param)
+                else:
+                    oos_loss = Entropy(oos_wealth, certainty_equiv, self.loss_param)
 
                 if self.Figure_IsUpdated:
                     self.DH_outputs.emit(

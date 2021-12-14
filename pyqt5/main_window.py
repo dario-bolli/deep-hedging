@@ -18,7 +18,7 @@ from scipy.stats import norm
 
 from dh_worker import DHworker
 from default_params import DeepHedgingParams
-from loss_metrics import Entropy
+from loss_metrics import Entropy, CVaR
 from deep_hedging import Deep_Hedging_Model
 from stochastic_processes import BlackScholesProcess
 from instruments import EuropeanCall
@@ -40,7 +40,7 @@ information_set = "normalized_log_S"
 # Loss function
 # loss_type = "CVaR" (Expected Shortfall) -> loss_param = alpha
 # loss_type = "Entropy" -> loss_param = lambda
-loss_type = "Entropy"
+# loss_type = "Entropy"
 
 # Other NN parameters
 use_batch_norm = False
@@ -155,6 +155,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.dividend = self.params.param("European Call Option",
                                               "Dividend Yield").value()
 
+            self.loss_type = self.params.param("Deep Hedging Strategy",
+                                                'Loss Function',
+                                               "Loss Type").value()
+
             self.loss_param = self.params.param("Deep Hedging Strategy",
                                                 'Loss Function',
                                                 "Risk Aversion").value()
@@ -198,10 +202,17 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.get_Black_Scholes_Prices()
 
             # Compute the loss value for Black-Scholes PnL
-            self.loss_BS = Entropy(
-                self.PnL_BS,
-                tf.Variable(0.0),
-                self.loss_param).numpy()
+
+            if self.loss_type == "CVaR":
+                self.loss_BS = CVaR(
+                    self.PnL_BS,
+                    tf.Variable(0.0),
+                    self.loss_param).numpy()
+            else:
+                self.loss_BS = Entropy(
+                    self.PnL_BS,
+                    tf.Variable(0.0),
+                    self.loss_param).numpy()
 
             # Define model and sub-models
             self.model = self.Define_DH_model()
@@ -216,10 +227,17 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.target_color = (0, 155, 0)
                     self.target_PnL = np.load(
                         "../data/target_PnL_" + str(self.epsilon) + ".npy")
-                    self.target_loss = Entropy(
-                        self.target_PnL,
-                        tf.Variable(0.0),
-                        self.loss_param).numpy()
+
+                    if self.loss_type == "CVaR":
+                        self.target_loss = CVaR(
+                            self.target_PnL,
+                            tf.Variable(0.0),
+                            self.loss_param).numpy()
+                    else:
+                        self.target_loss = Entropy(
+                            self.target_PnL,
+                            tf.Variable(0.0),
+                            self.loss_param).numpy()
                     self.flag_target = True
                 except BaseException:
                     print("No saved file.")
@@ -261,6 +279,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 model=self.model,
                 submodel=self.submodel,
                 strategy_type=self.strategy_type,
+                loss_type=self.loss_type,
                 loss_param=self.loss_param,
                 learning_rate=self.lr,
                 xtest=self.xtest,
