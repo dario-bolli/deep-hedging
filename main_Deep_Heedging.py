@@ -27,7 +27,7 @@ import matplotlib.pyplot as plt
 
 from stochastic_processes import BlackScholesProcess
 from instruments import EuropeanCall
-from deep_hedging import *#Deep_Hedging_Model_LSTM, Deep_Hedging_Model_Transformer, Delta_SubModel
+from deep_hedging import * #Deep_Hedging_Model_LSTM, Deep_Hedging_Model_Transformer, Delta_SubModel
 from loss_metrics import Entropy
 from utilities import train_test_split
 
@@ -88,7 +88,7 @@ if __name__ == '__main__':
     parser.add_argument('--figname', default="PnL.png", type=str,
                         help='Name for output PnL fig default : PnL.png')
 
-    parser.print_help()
+    #parser.print_help()
     args = parser.parse_args()
     # Geometric Brownian Motion.
     N = args.N  # Number of time steps (in days)
@@ -137,7 +137,6 @@ if __name__ == '__main__':
 
     loss_param = 1.0
 
-    print(args)
 
     lr = args.lr  # Learning rate
 
@@ -281,9 +280,8 @@ if __name__ == '__main__':
                         validation_data=[xtest], verbose=1)
 
     clear_output()
-    print("Finished running deep hedging algorithm! (Simple Network)")
+    print("Finished running deep hedging algorithm!")
 
-    # @title <font color='Blue'>**Results: Option Prices**</font>
     call = EuropeanCall()
 
     price_BS = call.get_BS_price(S=S_test[0], sigma=sigma,
@@ -317,7 +315,6 @@ if __name__ == '__main__':
     except:
         print("No Recurrent model.")
 
-    # @title <font color='Blue'>**Results: Black-Scholes PnL vs Deep Hedging PnL**</font>
     bar1 = PnL_BS + price_BS[0][0]
     bar2 = model_recurrent(xtest).numpy().squeeze() + price_BS[0][0]
 
