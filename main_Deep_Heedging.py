@@ -33,7 +33,7 @@ from utilities import train_test_split
 
 import argparse
 
-print("\nFinish installing and importing all necessary libraries!")
+#print("\nFinish installing and importing all necessary libraries!")
 clear_output()
 
 if __name__ == '__main__':
@@ -72,7 +72,7 @@ if __name__ == '__main__':
     parser.add_argument('--maxT', default=5, type=int,
                         help='Time step default: 5')
 
-    parser.add_argument('--batch_size', default=256, type=int,
+    parser.add_argument('--batch', default=256, type=int,
                         help='batch_size default: 256')
 
     parser.add_argument('--lr', default=0.001, type=np.double,
@@ -145,7 +145,7 @@ if __name__ == '__main__':
     d = args.d  # Number of hidden layers (Note including input nor output layer)
     maxT = args.maxT
     # Neural network training parameters
-    batch_size = args.batch_size  # Batch size
+    batch_size = args.batch  # Batch size
     epochs = args.epochs  # Number of epochs
 
     # Other parameters
@@ -192,11 +192,11 @@ if __name__ == '__main__':
 
     trade_set = np.stack((S), axis=1)  # Trading set
     print(information_set)
-    if information_set is "S":
+    if information_set == "S":
         info = np.stack((S), axis=1)  # Information set
-    elif information_set is "log_S":
+    elif information_set == "log_S":
         info = np.stack((np.log(S)), axis=1)
-    elif information_set is "normalized_log_S":
+    elif information_set == "normalized_log_S":
         info = np.stack((np.log(S / S0)), axis=1)
     else:
         raise Exception("There is a bug in my code, invalid information_set, yet it should have been taken care of by "
