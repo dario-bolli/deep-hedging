@@ -1,10 +1,17 @@
-from tensorflow.keras.layers import Input, Dense, Concatenate, Subtract, \
+from tensorflow.keras.layers import Input, Dense, LSTM, Concatenate, Subtract, \
                 Lambda, Add, Dot, BatchNormalization, Activation, LeakyReLU
 from tensorflow.keras.models import Model
+from tensorflow.keras import layers
+#import keras
 from tensorflow.keras.initializers import he_normal, Zeros, he_uniform, TruncatedNormal
 import tensorflow.keras.backend as K
 import tensorflow as tf
 import numpy as np
+from loss_metrics import CVaR
+from instruments import EuropeanCall
+import QuantLib as ql
+#from clamp import Clamp
+import torch.nn.functional as fn
 
 intitalizer_dict = { 
     "he_normal": he_normal(),
@@ -29,28 +36,38 @@ class Strategy_Layer(tf.keras.layers.Layer):
         self.delta_constraint = delta_constraint
         self.kernel_initializer = kernel_initializer
         
-        self.intermediate_dense = [None for _ in range(d)]
+        self.intermediate_lstm = [None for _ in range(d)]
         self.intermediate_BN = [None for _ in range(d)]
         
         for i in range(d):
-           self.intermediate_dense[i] = Dense(self.m,    
+            if i < d-1:
+                self.intermediate_lstm[i] = LSTM(self.m,    
                         kernel_initializer=self.kernel_initializer,
                         bias_initializer=bias_initializer,
-                        use_bias=(not self.use_batch_norm))
-           if self.use_batch_norm:
-               self.intermediate_BN[i] = BatchNormalization(momentum = 0.99, trainable=True)
-           
-        self.output_dense = Dense(1, 
+                        use_bias=(not self.use_batch_norm),
+                        return_sequences = True)
+                if self.use_batch_norm:
+                    self.intermediate_BN[i] = BatchNormalization(momentum = 0.99, trainable=True)
+            else:
+                self.intermediate_lstm[i] = LSTM(self.m,    
+                        kernel_initializer=self.kernel_initializer,
+                        bias_initializer=bias_initializer,
+                        use_bias=(not self.use_batch_norm),
+                        return_sequences = False)
+                if self.use_batch_norm:
+                    self.intermediate_BN[i] = BatchNormalization(momentum = 0.99, trainable=True)
+            
+        self.output_dense = Dense(2, 
                       kernel_initializer=self.kernel_initializer,
                       bias_initializer = bias_initializer,
-                      use_bias=True)     
-        
-    def call(self, input):
+                      use_bias=True)   
+
+    def call(self, input, delta):
         for i in range(self.d):
             if i == 0:
-                output = self.intermediate_dense[i](input)
+                output = self.intermediate_lstm[i](tf.expand_dims(input[:,0], axis=1))
             else:
-                output = self.intermediate_dense[i](output)                  
+                output = self.intermediate_lstm[i](output)                  
                 
             if self.use_batch_norm:
  			    # Batch normalization.
@@ -65,37 +82,62 @@ class Strategy_Layer(tf.keras.layers.Layer):
 					 
         if self.activation_output == "leaky_relu":
             output = LeakyReLU()(output)
+            b_l=  LeakyReLU()(output[..., 0])
+            b_u=  LeakyReLU()(output[..., 1])
+            min = tf.reshape(delta, shape=(-1,)) - b_l
+            max = tf.reshape(delta, shape = (-1,)) + b_u
+            condition = tf.math.greater(b_l, b_u)[0]
+            output = tf.cond(condition, lambda: (b_l+b_u)/2, lambda: K.clip(input[...,1], min_value=min, max_value=max))
+
         elif self.activation_output == "sigmoid" or self.activation_output == "tanh" or \
             self.activation_output == "hard_sigmoid":
-            # Enforcing hedge constraints
+            # Enforcing hedge constraints (liquidity, costs, ..)
             if self.delta_constraint is not None:
-                output = Activation(self.activation_output)(output)
+                b_l= Activation(self.activation_output)(output[..., 0])
+                b_u= Activation(self.activation_output)(output[..., 1])
+                min = tf.reshape(delta, shape=(-1,)) - b_l
+                max = tf.reshape(delta, shape=(-1,)) + b_u
                 delta_min, delta_max = self.delta_constraint
-                output = Lambda(lambda x : (delta_max-delta_min)*x + delta_min)(output)
-            else:
-                output = Activation(self.activation_output)(output)
+                condition_delta_l = b_l < delta_min
+                condition_delta_u = b_u > delta_max
+                min = tf.cond(condition_delta_l, lambda: delta_min, lambda: min)
+                max = tf.cond(condition_delta_u, lambda: delta_max, lambda: max)
+                #output = Lambda(lambda x : (delta_max-delta_min)*x + delta_min)(output)
+                condition = tf.math.greater(b_l, b_u)[0]
+                output = tf.cond(condition, lambda: (b_l+b_u)/2, lambda: K.clip(input[...,1], min_value=min, max_value=max))
         
+            else:
+                b_l= Activation(self.activation_output)(output[..., 0])
+                b_u= Activation(self.activation_output)(output[..., 1])
+                min = tf.reshape(delta, shape=(-1,)) - b_l
+                max = tf.reshape(delta, shape=(-1,)) + b_u
+                condition = tf.math.greater(b_l, b_u)[0]
+                output = tf.cond(condition, lambda: (b_l+b_u)/2, lambda: K.clip(output[...,1], min_value=min, max_value=max))#input
+            
         return output
-    
-def Deep_Hedging_Model(N = None, d = None, m = None, \
-        risk_free = None, dt = None, initial_wealth = 0.0, epsilon = 0.0, \
+
+def Deep_Hedging_Model(N = None, d = None, m = None, delta = None,\
+        risk_free = None, dt = None, initial_wealth = 0.0, epsilon = 0.0, maxT = 5,\
         final_period_cost = False, strategy_type = None, use_batch_norm = None, \
         kernel_initializer = "he_uniform", \
         activation_dense = "relu", activation_output = "linear", 
         delta_constraint = None, share_stretegy_across_time = False, 
         cost_structure = "proportional"):
-        
+    
+    print("clamp LSTM")
     # State variables.
     prc = Input(shape=(1,), name = "prc_0")
-    information_set = Input(shape=(1,), name = "information_set_0")
+    information_set =Input(shape=(1,), name = "information_set_0") 
+    delta_BS = Input(shape=(1,), name="delta_BS_0")
+    inputs = [prc, information_set, delta_BS]
 
-    inputs = [prc, information_set]
-    
+    sequence=[]
+
     for j in range(N+1):            
         if j < N:
             # Define the inputs for the strategy layers here.
             if strategy_type == "simple":
-                helper1 = information_set
+                helper = information_set
             elif strategy_type == "recurrent":
                 if j ==0:
                     # Tensorflow hack to deal with the dimension problem.
@@ -103,12 +145,17 @@ def Deep_Hedging_Model(N = None, d = None, m = None, \
                     # There is probably a better way but this works.
                     # Constant tensor doesn't work.
                     strategy = Lambda(lambda x: x*0.0)(prc)
-
+                    helper1 = Concatenate()([information_set, strategy])
+                    sequence.append(helper1)
+                    
+                #delta = delta_BS
                 helper1 = Concatenate()([information_set,strategy])
+                sequence.append(helper1)
+                helper = tf.stack(sequence[-maxT:], axis=1)
 
             # Determine if the strategy function depends on time t or not.
             if not share_stretegy_across_time:
-                strategy_layer = Strategy_Layer(d = d, m = m, 
+                strategy_layer = Strategy_Layer(d = d, m = m, \
                          use_batch_norm = use_batch_norm, \
                          kernel_initializer = kernel_initializer, \
                          activation_dense = activation_dense, \
@@ -119,17 +166,16 @@ def Deep_Hedging_Model(N = None, d = None, m = None, \
                 if j == 0:
                     # Strategy does not depend on t so there's only a single
                     # layer at t = 0
-                    strategy_layer = Strategy_Layer(d = d, m = m, 
+                    strategy_layer = Strategy_Layer(d = d, m = m, \
                              use_batch_norm = use_batch_norm, \
                              kernel_initializer = kernel_initializer, \
                              activation_dense = activation_dense, \
                              activation_output = activation_output, 
                              delta_constraint = delta_constraint, \
                              day = j)
-            
-            strategyhelper = strategy_layer(helper1)
-            
-            
+                             
+            strategyhelper = strategy_layer(helper, delta_BS) #delta_BS[:,j]
+            strategyhelper = tf.expand_dims(strategyhelper, axis=1)
             # strategy_-1 is set to 0
             # delta_strategy = strategy_{t+1} - strategy_t
             if j == 0:              
@@ -139,6 +185,7 @@ def Deep_Hedging_Model(N = None, d = None, m = None, \
             
             if cost_structure == "proportional": 
                 # Proportional transaction cost
+                delta_strategy = delta_strategy
                 absolutechanges = Lambda(lambda x : K.abs(x), name = "absolutechanges_" + str(j))(delta_strategy)
                 costs = Dot(axes=1)([absolutechanges,prc])
                 costs = Lambda(lambda x : epsilon*x, name = "cost_" + str(j))(costs)
@@ -163,13 +210,13 @@ def Deep_Hedging_Model(N = None, d = None, m = None, \
             
             prc = Input(shape=(1,),name = "prc_" + str(j+1))
             information_set = Input(shape=(1,), name = "information_set_" + str(j+1))
-            
-            strategy = strategyhelper    
+            delta_BS = Input(shape=(1,), name = "delta_BS_" + str(j+1))
+            strategy = strategyhelper
             
             if j != N - 1:
-                inputs += [prc, information_set]
+                inputs += [prc, information_set, delta_BS]
             else:
-                inputs += [prc]
+                inputs += [prc, delta_BS]
         else:
             # The paper assumes no transaction costs for the final period 
             # when the position is liquidated.
@@ -197,6 +244,7 @@ def Deep_Hedging_Model(N = None, d = None, m = None, \
     return Model(inputs=inputs, outputs=wealth)
 
 def Delta_SubModel(model = None, days_from_today = None, share_stretegy_across_time = False, strategy_type = "simple"):
+    print("enter submodel")
     if strategy_type == "simple":
         inputs = model.get_layer("delta_" + str(days_from_today)).input
         intermediate_inputs = inputs
