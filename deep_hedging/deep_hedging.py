@@ -115,7 +115,7 @@ def Deep_Hedging_Model_LSTM(N = None, d = None, m = None, \
             if j==0:
                 past_strategy.append(helper)
             past_strategy.append(helper)
-            helper = past_strategy[-maxT:]
+            helper = past_strategy[-maxT:] #0 :: t
             helper1 = tf.stack(helper,axis=1)
             #
             # Determine if the strategy function depends on time t or not.

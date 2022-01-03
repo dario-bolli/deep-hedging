@@ -85,8 +85,8 @@ if __name__ == '__main__':
                         default=Deep_Hedging_Model_LSTM,
                         help='DL model full name of the model you created (must be full model accepting d,m and maxT as inputs, default : Deep_Hedging_Model_LSTM')
 
-    parser.add_argument('--figname', default="PnL.png", type=str,
-                        help='Name for output PnL fig default : PnL.png')
+    parser.add_argument('--figname', default="Default", type=str,
+                        help='Name for output PnL fig default : combination of arguments')
 
     #parser.print_help()
     args = parser.parse_args()
@@ -144,6 +144,7 @@ if __name__ == '__main__':
     m = args.m  # Number of neurons in each hidden layer.
     d = args.d  # Number of hidden layers (Note including input nor output layer)
     maxT = args.maxT
+
     # Neural network training parameters
     batch_size = args.batch  # Batch size
     epochs = args.epochs  # Number of epochs
@@ -271,7 +272,7 @@ if __name__ == '__main__':
     early_stopping = EarlyStopping(monitor="loss",
                                    patience=10, min_delta=1e-4, restore_best_weights=True)
     reduce_lr = ReduceLROnPlateau(monitor="loss",
-                                  factor=0.5, patience=2, min_delta=1e-3, verbose=0)
+                                  factor=0.5, patience=2, min_delta=1e-4, verbose=0)
 
     callbacks = [early_stopping, reduce_lr]
 
@@ -330,5 +331,11 @@ if __name__ == '__main__':
     ax.hist((bar1, bar2), bins=30,
             label=["Black-Scholes PnL", "Deep Hedging PnL"])
     ax.legend()
-    plt.show()
-    plt.savefig(args.figname)
+    #plt.show()
+
+    if args.figname == "Default":
+        figname = "%i_%i_%i_%.2f_%s.png" %(m,d,maxT,epsilon,args.model.__name__)
+    else:
+        figname = args.figname
+
+    plt.savefig(figname)
