@@ -1,6 +1,5 @@
 from tensorflow.keras.layers import Input, Dense, Concatenate, Subtract, \
-                Lambda, Add, Dot, BatchNormalization, Activation, LeakyReLU, LSTM, \
-                LayerNormalization,Dropout,MultiHeadAttention,Conv1D,Reshape
+                Lambda, Add, Dot, BatchNormalization, Activation, LeakyReLU, LSTM
 from tensorflow.keras.models import Model
 from tensorflow.keras.initializers import he_normal, Zeros, he_uniform, TruncatedNormal
 import tensorflow.keras.backend as K
@@ -81,7 +80,7 @@ class Strategy_Layer(tf.keras.layers.Layer):
         
         return output
     
-def Deep_Hedging_Model_LSTM(N = None, d = None, m = None, \
+def Deep_Hedging_Model(N = None, d = None, m = None, \
         risk_free = None, dt = None, initial_wealth = 0.0, epsilon = 0.0,maxT = 5,\
         final_period_cost = False, strategy_type = "recurrent", use_batch_norm = None, \
         kernel_initializer = "he_uniform", \
@@ -115,7 +114,7 @@ def Deep_Hedging_Model_LSTM(N = None, d = None, m = None, \
             if j==0:
                 past_strategy.append(helper)
             past_strategy.append(helper)
-            helper = past_strategy[-maxT:] #0 :: t
+            helper = past_strategy[-maxT:]
             helper1 = tf.stack(helper,axis=1)
             #
             # Determine if the strategy function depends on time t or not.
@@ -216,151 +215,6 @@ def Deep_Hedging_Model_LSTM(N = None, d = None, m = None, \
             wealth = Add(name = "wealth_" + str(j))([wealth,payoff])
     return Model(inputs=inputs, outputs=wealth)
 
-def Deep_Hedging_Model_Transformer(N = None, d = None, m = None, \
-        risk_free = None, dt = None, initial_wealth = 0.0, epsilon = 0.0,maxT = 5,\
-        final_period_cost = False, strategy_type = "recurrent", use_batch_norm = None, \
-        kernel_initializer = "he_uniform", \
-        activation_dense = "relu", activation_output = "linear", 
-        delta_constraint = None, share_stretegy_across_time = False, 
-        cost_structure = "proportional",num_heads=256,dropout=0.2):
-        
-    # State variables.
-    past_strategy = list()
-    prc = Input(shape=(1,), name = "prc_0")
-    information_set = Input(shape=(1,), name = "information_set_0")
-
-    inputs = [prc, information_set]
-    
-    for j in range(N+1):            
-        if j < N:
-            # Define the inputs for the strategy layers here.
-            if strategy_type == "simple":
-                helper1 = information_set
-                sys.Warning("Model set to simple, not tested, if you do not know what ",
-                            " you are doing,use recurrent")
-            elif strategy_type == "recurrent":
-                if j ==0:
-                    # Tensorflow hack to deal with the dimension problem.
-                    #   Strategy at t = -1 should be 0. 
-                    # There is probably a better way but this works.
-                    # Constant tensor doesn't work.
-                    strategy = Lambda(lambda x: x*0.0)(prc)
-            helper = Concatenate()([information_set,strategy])
-            if j==0:
-                past_strategy.append(helper)
-            past_strategy.append(helper)
-            helper = past_strategy[-maxT:]
-            helper1 = tf.stack(helper,axis=1)
-            
-            #inputs = Reshape((helper1.shape[0],-1))(helper1)
-            #
-            # Determine if the strategy function depends on time t or not.
-            T = min(maxT,len(past_strategy)) # is set to maxT or less for the first time step
-
-            if not share_stretegy_across_time:
-                for k in range(d):
-                    if k == d-1:
-
-                            x = LayerNormalization(epsilon=1e-6)(helper1)
-
-                            x = MultiHeadAttention(
-                                key_dim=T, num_heads=num_heads, dropout=dropout
-                            )(x, x)
-                            x = Dropout(dropout)(x)
-                            res = x + helper1
-                            # Feed Forward Part
-                            x = LayerNormalization(epsilon=1e-6)(res)
-                            x = Conv1D(filters=T, kernel_size=1, activation="relu")(x)
-                            x = Dropout(dropout)(x)
-                            x = Conv1D(filters=helper1.shape[-1], kernel_size=1)(x)
-                    else:
-                        helper1 = LSTM(m,return_sequences=True,
-                                              kernel_initializer=kernel_initializer,
-                                bias_initializer=he_uniform())(helper1,training=True)
-                x = Reshape((x.shape[1]*x.shape[2],))(x)
-                strategyhelper = Dense(1,kernel_initializer=kernel_initializer,
-                                bias_initializer=he_uniform())(x)
-
-            else:
-                if j == 0:
-                    # Strategy does not depend on t so there's only a single
-                    # layer at t = 0
-                    strategy_layer = Strategy_Layer(d = d, m = m, 
-                             use_batch_norm = use_batch_norm, \
-                             kernel_initializer = kernel_initializer, \
-                             activation_dense = activation_dense, \
-                             activation_output = activation_output, 
-                             delta_constraint = delta_constraint, \
-                             day = j)
-            
-            #strategyhelper = strategy_layer(helper1)
-            
-            
-            # strategy_-1 is set to 0
-            # delta_strategy = strategy_{t+1} - strategy_t
-            if j == 0:              
-                delta_strategy = strategyhelper
-            else:
-                delta_strategy = Subtract(name = "diff_strategy_" + str(j))([strategyhelper, strategy])
-            
-            if cost_structure == "proportional": 
-                # Proportional transaction cost
-                absolutechanges = Lambda(lambda x : K.abs(x), name = "absolutechanges_" + str(j))(delta_strategy)
-                costs = Dot(axes=1)([absolutechanges,prc])
-                costs = Lambda(lambda x : epsilon*x, name = "cost_" + str(j))(costs)
-            elif cost_structure == "constant":
-                # Tensorflow hack..
-                costs = Lambda(lambda x : epsilon + x*0.0)(prc)
-                    
-            if j == 0:
-                wealth = Lambda(lambda x : initial_wealth - x, name = "costDot_" + str(j))(costs)
-            else:
-                wealth = Subtract(name = "costDot_" + str(j))([wealth, costs])
-            
-            # Wealth for the next period
-            # w_{t+1} = w_t + (strategy_t-strategy_{t+1})*prc_t
-            #         = w_t - delta_strategy*prc_t
-            mult = Dot(axes=1)([delta_strategy, prc])
-            wealth = Subtract(name = "wealth_" + str(j))([wealth, mult])
-
-            # Accumulate interest rate for next period.
-            FV_factor = np.exp(risk_free*dt)
-            wealth = Lambda(lambda x: x*FV_factor)(wealth)
-            
-            prc = Input(shape=(1,),name = "prc_" + str(j+1))
-            information_set = Input(shape=(1,), name = "information_set_" + str(j+1))
-            
-            strategy = strategyhelper    
-            
-            if j != N - 1:
-                inputs += [prc, information_set]
-            else:
-                inputs += [prc]
-        else:
-            # The paper assumes no transaction costs for the final period 
-            # when the position is liquidated.
-            if final_period_cost:
-                if cost_structure == "proportional":
-                    # Proportional transaction cost
-                    absolutechanges = Lambda(lambda x : K.abs(x), name = "absolutechanges_" + str(j))(strategy)
-                    costs = Dot(axes=1)([absolutechanges,prc])
-                    costs = Lambda(lambda x : epsilon*x, name = "cost_" + str(j))(costs)
-                elif cost_structure == "constant":
-                    # Tensorflow hack..
-                    costs = Lambda(lambda x : epsilon + x*0.0)(prc)
-
-                wealth = Subtract(name = "costDot_" + str(j))([wealth, costs])
-            # Wealth for the final period
-            # -delta_strategy = strategy_t
-            mult = Dot(axes=1)([strategy, prc])
-            wealth = Add()([wealth, mult])
-                 
-            # Add the terminal payoff of any derivatives.
-            payoff = Input(shape=(1,), name = "payoff")
-            inputs += [payoff]
-            
-            wealth = Add(name = "wealth_" + str(j))([wealth,payoff])
-    return Model(inputs=inputs, outputs=wealth)
 def Delta_SubModel(model = None, days_from_today = None, share_stretegy_across_time = False, strategy_type = "simple"):
     if strategy_type == "simple":
         inputs = model.get_layer("delta_" + str(days_from_today)).input
