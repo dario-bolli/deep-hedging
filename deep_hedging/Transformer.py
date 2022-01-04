@@ -1,16 +1,12 @@
-from tensorflow.keras.layers import Input, Dense, LSTM, Concatenate, Subtract, \
-    Lambda, Add, Dot, BatchNormalization, Activation, LeakyReLU
+from tensorflow.keras.layers import Input, Dense, Concatenate, Subtract, \
+    Lambda, Add, Dot, BatchNormalization, Activation, LeakyReLU, LSTM, \
+    LayerNormalization, Dropout, MultiHeadAttention, Conv1D, Reshape
 from tensorflow.keras.models import Model
-from tensorflow.keras import layers
-import tensorflow.keras as keras
 from tensorflow.keras.initializers import he_normal, Zeros, he_uniform, TruncatedNormal
 import tensorflow.keras.backend as K
 import tensorflow as tf
 import numpy as np
-import tensorflow.keras.backend as K
-from loss_metrics import CVaR
-
-from tcn import TCN, tcn_full_summary
+import sys
 
 intitalizer_dict = {
     "he_normal": he_normal(),
@@ -53,6 +49,8 @@ class Strategy_Layer(tf.keras.layers.Layer):
                                   use_bias=True)
 
     def call(self, input):
+        print('SS')
+
         for i in range(self.d):
             if i == 0:
                 output = self.intermediate_dense[i](input)
@@ -85,96 +83,28 @@ class Strategy_Layer(tf.keras.layers.Layer):
         return output
 
 
-#### TCN Strategy Layer recurrent strategy mandatory ####
-class TCN_Strategy_Layer(tf.keras.layers.Layer):
-    def __init__(self, d=None, m=None, use_batch_norm=None, \
-                 kernel_initializer="he_uniform", \
-                 activation_dense="relu", activation_output="linear",
-                 delta_constraint=None, day=None):
-        super().__init__(name="delta_" + str(day))
-        self.d = d
-        self.m = m
-        self.use_batch_norm = use_batch_norm
-        self.activation_dense = activation_dense
-        self.activation_output = activation_output
-        self.delta_constraint = delta_constraint
-        self.kernel_initializer = kernel_initializer
 
-        self.intermediate_tcn = [None for _ in range(d)]
-        self.intermediate_BN = [None for _ in range(d)]
-
-        for i in range(d):
-            if i < d - 1:
-                self.intermediate_tcn[i] = TCN(nb_filters=self.m, kernel_size=3,
-                                               kernel_initializer=self.kernel_initializer,
-                                               return_sequences=True)
-                if self.use_batch_norm:
-                    self.intermediate_BN[i] = BatchNormalization(momentum=0.99, trainable=True)
-            else:
-                self.intermediate_tcn[i] = TCN(nb_filters=self.m, kernel_size=3,
-                                               kernel_initializer=self.kernel_initializer,
-                                               return_sequences=False)
-                if self.use_batch_norm:
-                    self.intermediate_BN[i] = BatchNormalization(momentum=0.99, trainable=True)
-
-        self.output_dense = Dense(1,
-                                  kernel_initializer=self.kernel_initializer,
-                                  bias_initializer=bias_initializer,
-                                  use_bias=True)
-
-    def call(self, input):
-        for i in range(self.d):
-            if i == 0:
-                output = self.intermediate_tcn[i](input)
-            else:
-                output = self.intermediate_tcn[i](output)
-
-            if self.use_batch_norm:
-                # Batch normalization.
-                output = self.intermediate_BN[i](output, training=True)
-
-            if self.activation_dense == "leaky_relu":
-                output = LeakyReLU()(output)
-            else:
-                output = Activation(self.activation_dense)(output)
-
-        output = self.output_dense(output)
-
-        if self.activation_output == "leaky_relu":
-            output = LeakyReLU()(output)
-        elif self.activation_output == "sigmoid" or self.activation_output == "tanh" or \
-                self.activation_output == "hard_sigmoid":
-            # Enforcing hedge constraints
-            if self.delta_constraint is not None:
-                output = Activation(self.activation_output)(output)
-                delta_min, delta_max = self.delta_constraint
-                output = Lambda(lambda x: (delta_max - delta_min) * x + delta_min)(output)
-            else:
-                output = Activation(self.activation_output)(output)
-
-        return output
-
-
-def Deep_Hedging_Model_TCN(N=None, d=None, m=None, \
-                       risk_free=None, dt=None, initial_wealth=0.0, epsilon=0.0, maxT=5, \
-                       final_period_cost=False, strategy_type=None, use_batch_norm=None, \
-                       kernel_initializer="he_uniform", \
-                       activation_dense="relu", activation_output="linear",
-                       delta_constraint=None, share_stretegy_across_time=False,
-                       cost_structure="proportional"):
-    print("tcn model")
+def Deep_Hedging_Model_Transformer(N=None, d=None, m=None, \
+                                   risk_free=None, dt=None, initial_wealth=0.0, epsilon=0.0, maxT=5, \
+                                   final_period_cost=False, strategy_type="recurrent", use_batch_norm=None, \
+                                   kernel_initializer="he_uniform", \
+                                   activation_dense="relu", activation_output="linear",
+                                   delta_constraint=None, share_stretegy_across_time=False,
+                                   cost_structure="proportional", num_heads=256, dropout=0.2):
     # State variables.
+    past_strategy = list()
     prc = Input(shape=(1,), name="prc_0")
     information_set = Input(shape=(1,), name="information_set_0")
 
     inputs = [prc, information_set]
-    sequence = []
 
     for j in range(N + 1):
         if j < N:
             # Define the inputs for the strategy layers here.
             if strategy_type == "simple":
-                helper = information_set
+                helper1 = information_set
+                sys.Warning("Model set to simple, not tested, if you do not know what ",
+                            " you are doing,use recurrent")
             elif strategy_type == "recurrent":
                 if j == 0:
                     # Tensorflow hack to deal with the dimension problem.
@@ -182,34 +112,55 @@ def Deep_Hedging_Model_TCN(N=None, d=None, m=None, \
                     # There is probably a better way but this works.
                     # Constant tensor doesn't work.
                     strategy = Lambda(lambda x: x * 0.0)(prc)
-                    helper1 = Concatenate()([information_set, strategy])
-                    sequence.append(helper1)
+            helper = Concatenate()([information_set, strategy])
+            if j == 0:
+                past_strategy.append(helper)
+            past_strategy.append(helper)
+            helper = past_strategy[-maxT:]
+            helper1 = tf.stack(helper, axis=1)
 
-                helper1 = Concatenate()([information_set, strategy])
-                sequence.append(helper1)
-                helper = tf.stack(sequence[-maxT:], axis=1)
+            # inputs = Reshape((helper1.shape[0],-1))(helper1)
+            #
             # Determine if the strategy function depends on time t or not.
+            T = min(maxT, len(past_strategy))  # is set to maxT or less for the first time step
+
             if not share_stretegy_across_time:
-                strategy_layer = TCN_Strategy_Layer(d=d, m=m,
+                for k in range(d):
+                    if k == d - 1:
+
+                        x = LayerNormalization(epsilon=1e-6)(helper1)
+
+                        x = MultiHeadAttention(
+                            key_dim=T, num_heads=num_heads, dropout=dropout
+                        )(x, x)
+                        x = Dropout(dropout)(x)
+                        res = x + helper1
+                        # Feed Forward Part
+                        x = LayerNormalization(epsilon=1e-6)(res)
+                        x = Conv1D(filters=T, kernel_size=1, activation="relu")(x)
+                        x = Dropout(dropout)(x)
+                        x = Conv1D(filters=helper1.shape[-1], kernel_size=1)(x)
+                    else:
+                        helper1 = LSTM(m, return_sequences=True,
+                                       kernel_initializer=kernel_initializer,
+                                       bias_initializer=he_uniform())(helper1, training=True)
+                x = Reshape((x.shape[1] * x.shape[2],))(x)
+                strategyhelper = Dense(1, kernel_initializer=kernel_initializer,
+                                       bias_initializer=he_uniform())(x)
+
+            else:
+                if j == 0:
+                    # Strategy does not depend on t so there's only a single
+                    # layer at t = 0
+                    strategy_layer = Strategy_Layer(d=d, m=m,
                                                     use_batch_norm=use_batch_norm, \
                                                     kernel_initializer=kernel_initializer, \
                                                     activation_dense=activation_dense, \
                                                     activation_output=activation_output,
                                                     delta_constraint=delta_constraint, \
                                                     day=j)
-            else:
-                if j == 0:
-                    # Strategy does not depend on t so there's only a single
-                    # layer at t = 0
-                    strategy_layer = TCN_Strategy_Layer(d=d, m=m,
-                                                        use_batch_norm=use_batch_norm, \
-                                                        kernel_initializer=kernel_initializer, \
-                                                        activation_dense=activation_dense, \
-                                                        activation_output=activation_output,
-                                                        delta_constraint=delta_constraint, \
-                                                        day=j)
 
-            strategyhelper = strategy_layer(helper, training=True)  # strategy
+            # strategyhelper = strategy_layer(helper1)
 
             # strategy_-1 is set to 0
             # delta_strategy = strategy_{t+1} - strategy_t
@@ -251,7 +202,6 @@ def Deep_Hedging_Model_TCN(N=None, d=None, m=None, \
                 inputs += [prc, information_set]
             else:
                 inputs += [prc]
-
         else:
             # The paper assumes no transaction costs for the final period
             # when the position is liquidated.
@@ -273,15 +223,13 @@ def Deep_Hedging_Model_TCN(N=None, d=None, m=None, \
 
             # Add the terminal payoff of any derivatives.
             payoff = Input(shape=(1,), name="payoff")
-
             inputs += [payoff]
-            wealth = Add(name="wealth_" + str(j))([wealth, payoff])
 
+            wealth = Add(name="wealth_" + str(j))([wealth, payoff])
     return Model(inputs=inputs, outputs=wealth)
 
 
 def Delta_SubModel(model=None, days_from_today=None, share_stretegy_across_time=False, strategy_type="simple"):
-    print("enter submodel")
     if strategy_type == "simple":
         inputs = model.get_layer("delta_" + str(days_from_today)).input
         intermediate_inputs = inputs
@@ -295,3 +243,6 @@ def Delta_SubModel(model=None, days_from_today=None, share_stretegy_across_time=
         outputs = model.get_layer("delta_0")(intermediate_inputs)
 
     return Model(inputs, outputs)
+
+
+

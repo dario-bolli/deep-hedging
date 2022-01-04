@@ -16,19 +16,23 @@ import numpy as np
 import QuantLib as ql
 import tensorflow as tf
 from scipy.stats import norm
+
+import pandas as pd
+
 import warnings
 import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, \
     ReduceLROnPlateau
 from tensorflow.compat.v1.keras.optimizers import Adam
 from tensorflow.keras.models import Model
+import tensorflow.keras.backend as K
 
 import matplotlib.pyplot as plt
 
 from stochastic_processes import BlackScholesProcess
 from instruments import EuropeanCall
 from deep_hedging import * #Deep_Hedging_Model_LSTM, Deep_Hedging_Model_Transformer, Delta_SubModel
-from loss_metrics import Entropy
+from loss_metrics import Entropy, CVaR
 from utilities import train_test_split
 
 import argparse
@@ -42,7 +46,7 @@ if __name__ == '__main__':
                                                   "select a specific model, use the command --model then the function "
                                                   "name, note that the function name should be in deephedging .init \n"
                                                   "the script will automatically use available GPU, if multiple, "
-                                                  "the Mirror strategy is used"))
+                                                  "the Mirror strategy is used, best practice is 1 GPU"))
 
     parser.add_argument('--N', default=30, type=int,
                         help='Number of time steps (in days) default : 30')
@@ -86,7 +90,11 @@ if __name__ == '__main__':
                         help='DL model full name of the model you created (must be full model accepting d,m and maxT as inputs, default : Deep_Hedging_Model_LSTM')
 
     parser.add_argument('--figname', default="Default", type=str,
-                        help='Name for output PnL fig default : combination of arguments')
+                        help='Name for output (fig and file)  default : combination of arguments')
+
+    parser.add_argument('--outdir', default="Default", type=str,
+                        help='Name for output dir default : working directory')
+
 
     #parser.print_help()
     args = parser.parse_args()
@@ -209,6 +217,9 @@ if __name__ == '__main__':
     x_all = []
     for i in range(N + 1):
         x_all += [trade_set[i, :, None]]
+        if "clamp" in args.model.__name__:
+            x_all += [delta_BS[i, :, None]]
+
         if i != N:
             x_all += [info[i, :, None]]
     x_all += [payoff_T[:, None]]
@@ -337,5 +348,48 @@ if __name__ == '__main__':
         figname = "%i_%i_%i_%.2f_%s.png" %(m,d,maxT,epsilon,args.model.__name__)
     else:
         figname = args.figname
+    if args.figname == "Default":
+        outdir = os.getcwd()+"/"
+    else:
+        outdir = args.figname
 
-    plt.savefig(figname)
+    plt.savefig(outdir+figname)
+
+
+    model_recurrent.
+
+    inp = model.input  # input placeholder
+    outputs = [layer.output for layer in model.layers]  # all layer outputs
+    functors = [K.function([inp, K.learning_phase()], [out]) for out in outputs]  # evaluation functions
+
+    # Testing
+    test = np.random.random(input_shape)[np.newaxis, ...]
+    layer_outs = [func([test, 1.]) for func in functors]
+
+    output = pd.DataFrame()
+
+    Var = model_recurrent(xtest).numpy().squeeze()
+
+    output['d'] = d
+    output['m'] = m
+    output['maxT'] = maxT
+    output['model'] = args.model.__name__
+    output['epsilon'] = epsilon
+    output['CVar99'] = CVaR(model_recurrent.output, None, 0.99)
+    output['CVar95'] = CVaR(model_recurrent.output, None, 0.95)
+    output['CVar90'] = CVaR(model_recurrent.output, None, 0.90)
+    output['CVar80'] = CVaR(model_recurrent.output, None, 0.80)
+    output['CVar50'] = CVaR(model_recurrent.output, None, 0.50)
+
+    output['Var99'] = np.quartile(Var,0.99)
+    output['Var95'] = np.quartile(Var, 0.95)
+    output['Var90'] = np.quartile(Var, 0.90)
+    output['Var80'] = np.quartile(Var, 0.80)
+    output['Var50'] = np.quartile(Var,0.50)
+
+    output['Mean_PnL'] = np.mean(Var)
+    output['price'] = nn_simple_price
+
+
+
+

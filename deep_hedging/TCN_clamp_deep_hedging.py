@@ -11,9 +11,9 @@ from loss_metrics import CVaR
 from instruments import EuropeanCall
 import QuantLib as ql
 #from clamp import Clamp
-import torch.nn.functional as fn
+# import torch.nn.functional as fn
 
-from tcn import TCN, tcn_full_summary
+#from tcn import TCN, tcn_full_summary
 
 intitalizer_dict = { 
     "he_normal": he_normal(),
@@ -114,7 +114,7 @@ class Strategy_Layer(tf.keras.layers.Layer):
             
         return output
 
-def Deep_Hedging_Model(N = None, d = None, m = None, delta = None,\
+def Deep_Hedging_Model_TCN_CLAMP(N = None, d = None, m = None, delta = None,\
         risk_free = None, dt = None, initial_wealth = 0.0, epsilon = 0.0, maxT = 5,\
         final_period_cost = False, strategy_type = None, use_batch_norm = None, \
         kernel_initializer = "he_uniform", \
