@@ -112,7 +112,7 @@ def Deep_Hedging_Model_MLP_CLAMP(N = None, d = None, m = None, delta = None,\
         kernel_initializer = "he_uniform", \
         activation_dense = "relu", activation_output = "linear", 
         delta_constraint = None, share_stretegy_across_time = False, 
-        cost_structure = "proportional"):
+        cost_structure = "proportional",maxT=0):
     
     
     # State variables.

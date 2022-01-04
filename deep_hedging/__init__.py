@@ -4,3 +4,4 @@ from .LSTM_clamp_deep_hedging import Deep_Hedging_Model_LSTM_CLAMP
 from. MLP_clamp_deep_hedging import  Deep_Hedging_Model_MLP_CLAMP
 from .TCN_clamp_deep_hedging import Deep_Hedging_Model_TCN_CLAMP
 from .tcn_deep_hedging import Deep_Hedging_Model_TCN
+from .original_deep_hedging import Deep_Hedging_Model,Delta_SubModel

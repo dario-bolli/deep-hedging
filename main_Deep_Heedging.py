@@ -10,7 +10,7 @@ import sys, os
 
 sys.path.insert(0, os.getcwd() + "/deep-hedging")
 
-from IPython.display import clear_output
+# from IPython.display import clear_output
 
 import numpy as np
 import QuantLib as ql
@@ -24,6 +24,7 @@ import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, \
     ReduceLROnPlateau
 from tensorflow.compat.v1.keras.optimizers import Adam
+from tensorflow.keras.layers import Input, Concatenate
 from tensorflow.keras.models import Model
 import tensorflow.keras.backend as K
 
@@ -31,16 +32,28 @@ import matplotlib.pyplot as plt
 
 from stochastic_processes import BlackScholesProcess
 from instruments import EuropeanCall
-from deep_hedging import * #Deep_Hedging_Model_LSTM, Deep_Hedging_Model_Transformer, Delta_SubModel
+from deep_hedging import *  # Deep_Hedging_Model_LSTM, Deep_Hedging_Model_Transformer, Delta_SubModel
+
 from loss_metrics import Entropy, CVaR
 from utilities import train_test_split
 
 import argparse
 
-#print("\nFinish installing and importing all necessary libraries!")
-clear_output()
+# print("\nFinish installing and importing all necessary libraries!")
 
 if __name__ == '__main__':
+    function_mappings = {
+        'Deep_Hedging_Model_LSTM': Deep_Hedging_Model_LSTM,
+        'Deep_Hedging_Model_Transformer': Deep_Hedging_Model_Transformer,
+        'Deep_Hedging_Model_LSTM_CLAMP': Deep_Hedging_Model_LSTM_CLAMP,
+        'Deep_Hedging_Model_MLP_CLAMP': Deep_Hedging_Model_MLP_CLAMP,
+        'Deep_Hedging_Model_TCN_CLAMP': Deep_Hedging_Model_TCN_CLAMP,
+        'Deep_Hedging_Model_TCN': Deep_Hedging_Model_TCN,
+        'Deep_Hedging_Model_MLP': Deep_Hedging_Model
+    }
+    lis = ""
+    for s in function_mappings.keys():
+        lis += s + ", "
 
     parser = argparse.ArgumentParser(description=("Run Deep Hedging scripts, use -h to list available option. \n To "
                                                   "select a specific model, use the command --model then the function "
@@ -86,17 +99,17 @@ if __name__ == '__main__':
                         help='Number of epochs default: 50')
 
     parser.add_argument('--model', dest='input_model',
-                        default=Deep_Hedging_Model_LSTM,
-                        help='DL model full name of the model you created (must be full model accepting d,m and maxT as inputs, default : Deep_Hedging_Model_LSTM')
+                        default="Deep_Hedging_Model_LSTM",
+                        help='Model you want to use among %s, default : Deep_Hedging_Model_LSTM' % lis[:-2])
 
     parser.add_argument('--figname', default="Default", type=str,
-                        help='Name for output (fig and file)  default : combination of arguments')
+                        help='Name for output (fig and file)  default : combination of arguments (m, d, maxT, '
+                             'epsilon, args.input_model)')
 
     parser.add_argument('--outdir', default="Default", type=str,
                         help='Name for output dir default : working directory')
 
-
-    #parser.print_help()
+    # parser.print_help()
     args = parser.parse_args()
     # Geometric Brownian Motion.
     N = args.N  # Number of time steps (in days)
@@ -145,7 +158,6 @@ if __name__ == '__main__':
 
     loss_param = 1.0
 
-
     lr = args.lr  # Learning rate
 
     # Neural network (NN) structure
@@ -186,7 +198,6 @@ if __name__ == '__main__':
 
     S = stochastic_process.gen_path(maturity, N, nobs)
 
-    clear_output()
 
     print("\n\ns0 = " + str(S0))
     print("sigma = " + str(sigma))
@@ -210,6 +221,12 @@ if __name__ == '__main__':
     else:
         raise Exception("There is a bug in my code, invalid information_set, yet it should have been taken care of by "
                         "the parser")
+    call = EuropeanCall()
+    delta_BS = np.transpose(call.get_BS_delta(S=np.transpose(trade_set), sigma=sigma,
+                                              risk_free=risk_free, dividend=dividend, K=strike,
+                                              exercise_date=maturity_date,
+                                              calculation_date=calculation_date,
+                                              day_count=day_count, dt=dt))
         # Structure of xtrain:
     #   1) Trade set: [S]
     #   2) Information set: [S]
@@ -217,7 +234,7 @@ if __name__ == '__main__':
     x_all = []
     for i in range(N + 1):
         x_all += [trade_set[i, :, None]]
-        if "clamp" in args.model.__name__:
+        if "CLAMP" in args.input_model:
             x_all += [delta_BS[i, :, None]]
 
         if i != N:
@@ -240,35 +257,39 @@ if __name__ == '__main__':
     gpus = tf.config.list_logical_devices('GPU')
     N_GPU = len(gpus)
     print("Num GPUs Available: ", N_GPU)
+
     if N_GPU == 0:
-        model_recurrent = args.input_model(N=N, d=d, m=m, risk_free=risk_free,
-                                           dt=dt, strategy_type="recurrent", epsilon=epsilon, maxT=maxT,
-                                           use_batch_norm=use_batch_norm,
-                                           kernel_initializer=kernel_initializer,
-                                           activation_dense=activation_dense,
-                                           activation_output=activation_output,
-                                           final_period_cost=final_period_cost)
+        model_recurrent = function_mappings[args.input_model](N=N, d=d, m=m, risk_free=risk_free,
+                                                              dt=dt, strategy_type="recurrent", epsilon=epsilon,
+                                                              maxT=maxT,
+                                                              use_batch_norm=use_batch_norm,
+                                                              kernel_initializer=kernel_initializer,
+                                                              activation_dense=activation_dense,
+                                                              activation_output=activation_output,
+                                                              final_period_cost=final_period_cost)
     elif N_GPU == 1:
-        with tf.device(tf.config.list_logical_devices(gpus[0].name)):
-            model_recurrent = args.input_model(N=N, d=d, m=m, risk_free=risk_free,
-                                               dt=dt, strategy_type="recurrent", epsilon=epsilon, maxT=maxT,
-                                               use_batch_norm=use_batch_norm,
-                                               kernel_initializer=kernel_initializer,
-                                               activation_dense=activation_dense,
-                                               activation_output=activation_output,
-                                               final_period_cost=final_period_cost)
+        with tf.device(gpus[0].name):
+            model_recurrent = function_mappings[args.input_model](N=N, d=d, m=m, risk_free=risk_free,
+                                                                  dt=dt, strategy_type="recurrent", epsilon=epsilon,
+                                                                  maxT=maxT,
+                                                                  use_batch_norm=use_batch_norm,
+                                                                  kernel_initializer=kernel_initializer,
+                                                                  activation_dense=activation_dense,
+                                                                  activation_output=activation_output,
+                                                                  final_period_cost=final_period_cost)
 
     elif N_GPU > 1:
         print("Use all available GPU using Mirrored Strategy")
         strategy = tf.distribute.MirroredStrategy(gpus)
         with strategy.scope():
-            model_recurrent = args.input_model(N=N, d=d, m=m, risk_free=risk_free,
-                                               dt=dt, strategy_type="recurrent", epsilon=epsilon, maxT=maxT,
-                                               use_batch_norm=use_batch_norm,
-                                               kernel_initializer=kernel_initializer,
-                                               activation_dense=activation_dense,
-                                               activation_output=activation_output,
-                                               final_period_cost=final_period_cost)
+            model_recurrent = function_mappings[args.input_model](N=N, d=d, m=m, risk_free=risk_free,
+                                                                  dt=dt, strategy_type="recurrent", epsilon=epsilon,
+                                                                  maxT=maxT,
+                                                                  use_batch_norm=use_batch_norm,
+                                                                  kernel_initializer=kernel_initializer,
+                                                                  activation_dense=activation_dense,
+                                                                  activation_output=activation_output,
+                                                                  final_period_cost=final_period_cost)
 
     else:
         warnings.warn("Strange number of GPU")
@@ -278,7 +299,7 @@ if __name__ == '__main__':
 
     model_recurrent.compile(optimizer=optimizer)
 
-    model_recurrent.summary()
+    # model_recurrent.summary()
 
     early_stopping = EarlyStopping(monitor="loss",
                                    patience=10, min_delta=1e-4, restore_best_weights=True)
@@ -288,10 +309,9 @@ if __name__ == '__main__':
     callbacks = [early_stopping, reduce_lr]
 
     # Fit the model.
-    model_recurrent.fit(x=xtrain, batch_size=batch_size, epochs=50,
-                        validation_data=[xtest], verbose=1)
+    model_recurrent.fit(x=xtrain, batch_size=batch_size, epochs=epochs,
+                        validation_data=[xtest], verbose=1, callbacks=callbacks)
 
-    clear_output()
     print("Finished running deep hedging algorithm!")
 
     call = EuropeanCall()
@@ -327,6 +347,7 @@ if __name__ == '__main__':
     except:
         print("No Recurrent model.")
 
+    print("Plotting PnL")
     bar1 = PnL_BS + price_BS[0][0]
     bar2 = model_recurrent(xtest).numpy().squeeze() + price_BS[0][0]
 
@@ -342,54 +363,139 @@ if __name__ == '__main__':
     ax.hist((bar1, bar2), bins=30,
             label=["Black-Scholes PnL", "Deep Hedging PnL"])
     ax.legend()
-    #plt.show()
+    # plt.show()
 
     if args.figname == "Default":
-        figname = "%i_%i_%i_%.2f_%s.png" %(m,d,maxT,epsilon,args.model.__name__)
+        figname = "%i_%i_%i_%.2f_%s" % (m, d, maxT, epsilon, args.input_model)
     else:
         figname = args.figname
+
     if args.figname == "Default":
-        outdir = os.getcwd()+"/"
+        outdir = os.getcwd() + "/"
     else:
         outdir = args.figname
 
-    plt.savefig(outdir+figname)
+    plt.savefig(outdir + figname + "_PnL.png")
 
 
-    model_recurrent.
 
-    inp = model.input  # input placeholder
-    outputs = [layer.output for layer in model.layers]  # all layer outputs
-    functors = [K.function([inp, K.learning_phase()], [out]) for out in outputs]  # evaluation functions
-
-    # Testing
-    test = np.random.random(input_shape)[np.newaxis, ...]
-    layer_outs = [func([test, 1.]) for func in functors]
 
     output = pd.DataFrame()
 
-    Var = model_recurrent(xtest).numpy().squeeze()
 
+    def cvar(wealth, w, alpha):
+        return np.mean(w + (np.maximum(-wealth - w, 0) / (1 - alpha)))
+
+
+    Var = model_recurrent(xtest).numpy().squeeze()
     output['d'] = d
     output['m'] = m
     output['maxT'] = maxT
-    output['model'] = args.model.__name__
+    output['model'] = args.input_model
     output['epsilon'] = epsilon
-    output['CVar99'] = CVaR(model_recurrent.output, None, 0.99)
-    output['CVar95'] = CVaR(model_recurrent.output, None, 0.95)
-    output['CVar90'] = CVaR(model_recurrent.output, None, 0.90)
-    output['CVar80'] = CVaR(model_recurrent.output, None, 0.80)
-    output['CVar50'] = CVaR(model_recurrent.output, None, 0.50)
+    output['CVar99'] = CVaR(model_recurrent.output, risk_neutral_price, 0.99)
+    output['CVar95'] = CVaR(model_recurrent.output, risk_neutral_price, 0.95)
+    output['CVar90'] = CVaR(model_recurrent.output, risk_neutral_price, 0.90)
+    output['CVar80'] = CVaR(model_recurrent.output, risk_neutral_price, 0.80)
+    output['CVar50'] = CVaR(model_recurrent.output, risk_neutral_price, 0.50)
 
-    output['Var99'] = np.quartile(Var,0.99)
+    output['Var99'] = np.quartile(Var, 0.99)
     output['Var95'] = np.quartile(Var, 0.95)
     output['Var90'] = np.quartile(Var, 0.90)
     output['Var80'] = np.quartile(Var, 0.80)
-    output['Var50'] = np.quartile(Var,0.50)
+    output['Var50'] = np.quartile(Var, 0.50)
 
     output['Mean_PnL'] = np.mean(Var)
     output['price'] = nn_simple_price
+    output['price_BS'] = price_BS[0][0]
+    output['price_free'] = risk_neutral_price
+
+
+    output.to_csv(outdir + figname + "pd.csv")
+
+    print("Plotting Wealth")
 
 
 
+    model = model_recurrent
+    change_wealth = list()
+    for w in range(N + 1):
+        intermediate_layer_model = Model(inputs=model.input,
+                                         outputs=model.get_layer("wealth_%i" % w).output)
+        change_wealth.append(intermediate_layer_model.predict(xtest))
 
+    wealths = pd.DataFrame(np.array(change_wealth)[:, :, 0])
+    fig, ax = plt.subplots()
+
+    # ax.plot(options[0],label='options')
+    ax.plot(wealths.iloc[:, :], label='wealth')
+
+    ax.set(ylabel='Wealth', xlabel='Days', title='Wealth movement')
+    plt.savefig(outdir + figname + "_Wealth.png")
+
+    print("Plotting Deltas")
+
+    days_from_today = 15
+    tau = (N - days_from_today) * dt
+
+    min_S = S_test[0][:, days_from_today].min()
+    max_S = S_test[0][:, days_from_today].max()
+
+    S_range = np.linspace(min_S * 0.8, max_S * 1.2, 101)
+
+    in_sample_range = S_range[np.any([S_range >= min_S, S_range <= max_S], axis=0)]
+    out_sample_range_low = S_range[S_range < min_S]
+    out_sample_range_high = S_range[S_range > max_S]
+
+    # Attention: Need to transform it to be consistent with the information set.
+    if information_set == "S":
+        I_range = S_range  # Information set
+    elif information_set == "log_S":
+        I_range = np.log(S_range)
+    elif information_set == "normalized_log_S":
+        I_range = np.log(S_range / S0)
+    else:
+        raise Exception("There is a bug in my code, invalid information_set, yet it should have been taken care of by "
+                        "the parser")
+    # Compute Black-Scholes delta for S_range.
+    # Reference: https://en.wikipedia.org/wiki/Greeks_(finance)
+    d1 = (np.log(S_range) - np.log(strike) + \
+          (risk_free - dividend + (sigma ** 2) / 2) * tau) \
+         / (sigma * np.sqrt(tau))
+
+    model_delta = norm.cdf(d1) * np.exp(-dividend * tau)
+
+    model = model_recurrent
+    intermediate_layer_model = Model(inputs=model.input,
+                                     outputs=model.get_layer("delta_%i" % days_from_today).output)
+
+
+    inputs = [Input(1, ), Input(1, )]
+    intermediate_inputs = Concatenate()(inputs)
+
+    outputs = model.get_layer("delta_" + str(days_from_today))(intermediate_inputs)
+
+    MODEL = Model(inputs, outputs)
+
+    nn_delta = MODEL.predict([I_range, I_range])
+
+    # Create a plot of Black-Scholes delta against deep hedging delta.
+    fig_delta = plt.figure(dpi=125, facecolor='w')
+    fig_delta.suptitle("Black-Scholes Delta vs Deep Hedging Delta \n", \
+                       fontweight="bold")
+    ax_delta = fig_delta.add_subplot()
+    ax_delta.set_title("Simple Network Structure with " + \
+                       "t=" + str(days_from_today) + ", " + \
+                       "epsilon=" + str(epsilon), \
+                       fontsize=8)
+    ax_delta.set_xlabel("Price of the Underlying Asset")
+    ax_delta.set_ylabel("Delta")
+    ax_delta.plot(S_range, model_delta, label="Black-Scholes Delta")
+    ax_delta.scatter(in_sample_range, nn_delta[np.any([S_range >= min_S, S_range <= max_S], axis=0)], c="red", s=2,
+                     label="In-Range DH Delta")
+    ax_delta.scatter(out_sample_range_low, nn_delta[S_range < min_S], c="green", s=2, label="Out-of-Range DH Delta")
+    ax_delta.scatter(out_sample_range_high, nn_delta[S_range > max_S], c="green", s=2)
+
+    ax_delta.legend()
+
+    plt.savefig(outdir + figname + "_delta_15.png")
