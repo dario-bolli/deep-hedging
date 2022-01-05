@@ -373,7 +373,7 @@ if __name__ == '__main__':
     if args.figname == "Default":
         outdir = os.getcwd() + "/"
     else:
-        outdir = args.figname
+        outdir = args.outdir
 
     plt.savefig(outdir + figname + "_PnL.png")
 
@@ -393,11 +393,11 @@ if __name__ == '__main__':
     output['maxT'] = maxT
     output['model'] = args.input_model
     output['epsilon'] = epsilon
-    output['CVar99'] = CVaR(model_recurrent.output, risk_neutral_price, 0.99)
-    output['CVar95'] = CVaR(model_recurrent.output, risk_neutral_price, 0.95)
-    output['CVar90'] = CVaR(model_recurrent.output, risk_neutral_price, 0.90)
-    output['CVar80'] = CVaR(model_recurrent.output, risk_neutral_price, 0.80)
-    output['CVar50'] = CVaR(model_recurrent.output, risk_neutral_price, 0.50)
+    output['CVar99'] = cvar(model_recurrent.output, risk_neutral_price, 0.99)
+    output['CVar95'] = cvar(model_recurrent.output, risk_neutral_price, 0.95)
+    output['CVar90'] = cvar(model_recurrent.output, risk_neutral_price, 0.90)
+    output['CVar80'] = cvar(model_recurrent.output, risk_neutral_price, 0.80)
+    output['CVar50'] = cvar(model_recurrent.output, risk_neutral_price, 0.50)
 
     output['Var99'] = np.quartile(Var, 0.99)
     output['Var95'] = np.quartile(Var, 0.95)
