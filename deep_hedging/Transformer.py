@@ -134,9 +134,8 @@ def Deep_Hedging_Model_Transformer(N=None, d=None, m=None, \
                             key_dim=T, num_heads=num_heads, dropout=dropout
                         )(x, x)
                         x = Dropout(dropout)(x)
-                        res = x + helper1
                         # Feed Forward Part
-                        x = LayerNormalization(epsilon=1e-6)(res)
+                        x = LayerNormalization(epsilon=1e-6)(x)
                         x = Conv1D(filters=T, kernel_size=1, activation="relu")(x)
                         x = Dropout(dropout)(x)
                         x = Conv1D(filters=helper1.shape[-1], kernel_size=1)(x)

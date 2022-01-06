@@ -13,7 +13,7 @@ import QuantLib as ql
 #from clamp import Clamp
 # import torch.nn.functional as fn
 
-#from tcn import TCN, tcn_full_summary
+from tcn import TCN, tcn_full_summary
 
 intitalizer_dict = { 
     "he_normal": he_normal(),

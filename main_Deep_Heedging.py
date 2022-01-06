@@ -132,7 +132,7 @@ if __name__ == '__main__':
     day_count = ql.Actual365Fixed()  # Actual/Actual (ISDA)
 
     # Proportional transaction cost.
-    epsilon = 0.0
+    epsilon = args.epsilon
 
     # Information set (in string)
     # Choose from: S, log_S, normalized_log_S (by S0)
@@ -366,7 +366,7 @@ if __name__ == '__main__':
     # plt.show()
 
     if args.figname == "Default":
-        figname = "%i_%i_%i_%.2f_%s" % (m, d, maxT, epsilon, args.input_model)
+        figname = "%i_%i_%i_%s_%s" % (m, d, maxT, str(epsilon), args.input_model)
     else:
         figname = args.figname
 
@@ -380,7 +380,7 @@ if __name__ == '__main__':
 
 
 
-    output = pd.DataFrame()
+    output = pd.Series()
 
 
     def cvar(wealth, w, alpha):
@@ -393,47 +393,53 @@ if __name__ == '__main__':
     output['maxT'] = maxT
     output['model'] = args.input_model
     output['epsilon'] = epsilon
-    output['CVar99'] = cvar(model_recurrent.output, risk_neutral_price, 0.99)
-    output['CVar95'] = cvar(model_recurrent.output, risk_neutral_price, 0.95)
-    output['CVar90'] = cvar(model_recurrent.output, risk_neutral_price, 0.90)
-    output['CVar80'] = cvar(model_recurrent.output, risk_neutral_price, 0.80)
-    output['CVar50'] = cvar(model_recurrent.output, risk_neutral_price, 0.50)
+    output['CVar99'] = cvar(Var, risk_neutral_price, 0.99)
+    output['CVar95'] = cvar(Var, risk_neutral_price, 0.95)
+    output['CVar90'] = cvar(Var, risk_neutral_price, 0.90)
+    output['CVar80'] = cvar(Var, risk_neutral_price, 0.80)
+    output['CVar50'] = cvar(Var, risk_neutral_price, 0.50)
 
-    output['Var99'] = np.quartile(Var, 0.99)
-    output['Var95'] = np.quartile(Var, 0.95)
-    output['Var90'] = np.quartile(Var, 0.90)
-    output['Var80'] = np.quartile(Var, 0.80)
-    output['Var50'] = np.quartile(Var, 0.50)
+    output['Var99'] = np.quantile(Var, 0.99)
+    output['Var95'] = np.quantile(Var, 0.95)
+    output['Var90'] = np.quantile(Var, 0.90)
+    output['Var80'] = np.quantile(Var, 0.80)
+    output['Var50'] = np.quantile(Var, 0.50)
 
     output['Mean_PnL'] = np.mean(Var)
-    output['Var_PnL'] = np.std(Var)
+    output['Std_PnL'] = np.std(Var)
 
     output['price'] = nn_simple_price
     output['price_BS'] = price_BS[0][0]
     output['price_free'] = risk_neutral_price
 
 
-    output.to_csv(outdir + figname + "pd.csv")
+    output.to_csv(outdir + figname + "_pd.csv")
 
-    print("Plotting Wealth")
+    pd.DataFrame(Var).to_csv(outdir + figname + "_Var.csv")
+
+    ii = False
+    if ii:
+
+        print("Plotting Wealth")
 
 
 
-    model = model_recurrent
-    change_wealth = list()
-    for w in range(N + 1):
-        intermediate_layer_model = Model(inputs=model.input,
-                                         outputs=model.get_layer("wealth_%i" % w).output)
-        change_wealth.append(intermediate_layer_model.predict(xtest))
+        model = model_recurrent
+        change_wealth = list()
+        for w in range(N + 1):
+            intermediate_layer_model = Model(inputs=model.input,
+                                             outputs=model.get_layer("wealth_%i" % w).output)
+            change_wealth.append(intermediate_layer_model.predict(xtest))
 
-    wealths = pd.DataFrame(np.array(change_wealth)[:, :, 0])
-    fig, ax = plt.subplots()
+        wealths = pd.DataFrame(np.array(change_wealth)[:, :, 0])
+        fig, ax = plt.subplots()
 
-    # ax.plot(options[0],label='options')
-    ax.plot(wealths.iloc[:, :], label='wealth')
+        # ax.plot(options[0],label='options')
+        ax.plot(wealths.iloc[:, :], label='wealth')
 
-    ax.set(ylabel='Wealth', xlabel='Days', title='Wealth movement')
-    plt.savefig(outdir + figname + "_Wealth.png")
+        ax.set(ylabel='Wealth', xlabel='Days', title='Wealth movement')
+        plt.savefig(outdir + figname + "_Wealth.png")
+
 
     print("Plotting Deltas")
 
@@ -443,7 +449,7 @@ if __name__ == '__main__':
     min_S = S_test[0][:, days_from_today].min()
     max_S = S_test[0][:, days_from_today].max()
 
-    S_range = np.linspace(min_S * 0.8, max_S * 1.2, 101)
+    S_range = np.linspace(min_S * 0.6, max_S * 1.4, 101)
 
     in_sample_range = S_range[np.any([S_range >= min_S, S_range <= max_S], axis=0)]
     out_sample_range_low = S_range[S_range < min_S]
@@ -475,12 +481,18 @@ if __name__ == '__main__':
     inputs = [Input(1, ), Input(1, )]
     intermediate_inputs = Concatenate()(inputs)
 
-    outputs = model.get_layer("delta_" + str(days_from_today))(intermediate_inputs)
+    if "CLAMP" in args.input_model:
+        outputs = model.get_layer("delta_" + str(days_from_today))(intermediate_inputs
+                                                                   , model_delta.astype(np.float32))
+    else:
+        outputs = model.get_layer("delta_" + str(days_from_today))(intermediate_inputs)
+
 
     MODEL = Model(inputs, outputs)
 
-    nn_delta = MODEL.predict([I_range, I_range])
+    nn_delta = MODEL([I_range, I_range])
 
+    pd.DataFrame(nn_delta).to_csv(outdir + figname + "_delta.csv")
     # Create a plot of Black-Scholes delta against deep hedging delta.
     fig_delta = plt.figure(dpi=125, facecolor='w')
     fig_delta.suptitle("Black-Scholes Delta vs Deep Hedging Delta \n", \
