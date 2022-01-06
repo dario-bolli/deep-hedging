@@ -11,17 +11,17 @@ source myenv/bin/activate
 
 # If you want more info about available options of the main, do python ./main_Deep_Heedging.py -h
 
-for d in [5,10,15,30]
+for d in 5 10 15 30
 do
-  for m in [1,2]
+  for m in 1 2
   do
-    for maxT in [1, 3, 6, 11,30]
+    for maxT in  1  3 6 11 30
     do
       bsub -G "s_stud_infk" -n 4 -W 08:00\
            -R "rusage[mem=4800]" -R "rusage[ngpus_excl_p=1]" \
-            python main_Deep_Heedging.py --d d --maxT maxT \
-             --epochs 80 --model Deep_Hedging_Model_Transformer \
-             --m m --outdir /deep-hedging/out/
+            python main_Deep_Heedging.py --d $d --maxT $maxT \
+             --epochs 100 --model Deep_Hedging_Model_MLP_CLAMP \
+             --m $m
     done
   done
 done
