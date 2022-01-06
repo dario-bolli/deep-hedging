@@ -18,7 +18,7 @@ do
     for maxT in  1  3 6 11 30
     do
       bsub -G "s_stud_infk" -n 4 -W 08:00\
-           -R "rusage[mem=4800]" -R "rusage[ngpus_excl_p=1]" \
+           -R "rusage[mem=9600]" -R "rusage[ngpus_excl_p=1]" \
             python main_Deep_Heedging.py --d $d --maxT $maxT \
              --epochs 100 --model Deep_Hedging_Model_MLP_CLAMP \
              --m $m

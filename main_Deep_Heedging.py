@@ -19,6 +19,8 @@ from scipy.stats import norm
 
 import pandas as pd
 
+from tqdm import tqdm
+
 import warnings
 import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, \
@@ -430,7 +432,9 @@ if __name__ == '__main__':
 
         model = model_recurrent
         change_wealth = list()
-        for w in tqdm(range(N + 2),N + 2):
+        for w in tqdm(range(N + 2)):
+            #print("looking for wealth d=" + w, end='\r')
+
             intermediate_layer_model = Model(inputs=model.input,
                                              outputs=model.get_layer("wealth_%i" % w).output)
             change_wealth.append(intermediate_layer_model.predict(xtest))
