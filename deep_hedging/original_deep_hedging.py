@@ -187,13 +187,13 @@ def Deep_Hedging_Model(N = None, d = None, m = None,
             # Wealth for the final period
             # -delta_strategy = strategy_t
             mult = Dot(axes=1)([strategy, prc])
-            wealth = Add()([wealth, mult])
+            wealth = Add(name = "wealth_" + str(j))([wealth, mult])
                  
             # Add the terminal payoff of any derivatives.
             payoff = Input(shape=(1,), name = "payoff")
             inputs += [payoff]
             
-            wealth = Add(name = "wealth_" + str(j))([wealth,payoff])
+            wealth = Add(name = "wealth_" + str(j+1))([wealth,payoff])
     return Model(inputs=inputs, outputs=wealth)
 
 def Delta_SubModel(model = None, days_from_today = None, share_stretegy_across_time = False, strategy_type = "simple"):

@@ -218,13 +218,13 @@ def Deep_Hedging_Model_Transformer(N=None, d=None, m=None, \
             # Wealth for the final period
             # -delta_strategy = strategy_t
             mult = Dot(axes=1)([strategy, prc])
-            wealth = Add()([wealth, mult])
+            wealth = Add(name = "wealth_" + str(j))([wealth, mult])
 
             # Add the terminal payoff of any derivatives.
             payoff = Input(shape=(1,), name="payoff")
             inputs += [payoff]
 
-            wealth = Add(name="wealth_" + str(j))([wealth, payoff])
+            wealth = Add(name="wealth_" + str(j+1))([wealth, payoff])
     return Model(inputs=inputs, outputs=wealth)
 
 

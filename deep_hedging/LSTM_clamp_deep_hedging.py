@@ -79,41 +79,55 @@ class Strategy_Layer(tf.keras.layers.Layer):
                 output = Activation(self.activation_dense)(output)
          
         output = self.output_dense(output)
-					 
+
         if self.activation_output == "leaky_relu":
-            output = LeakyReLU()(output)
-            b_l=  LeakyReLU()(output[..., 0])
-            b_u=  LeakyReLU()(output[..., 1])
-            min = tf.reshape(delta, shape=(-1,)) - b_l
-            max = tf.reshape(delta, shape = (-1,)) + b_u
-            condition = tf.math.greater(b_l, b_u)[0]
-            output = tf.cond(condition, lambda: (b_l+b_u)/2, lambda: K.clip(input[...,1], min_value=min, max_value=max))
+            if self.delta_constraint is not None:
+                output = LeakyReLU(alpha=0.001)(output)
+                b_l = output[..., 0]
+                b_u = output[..., 1]
+                min = tf.reshape(delta, shape=(-1,)) - b_l
+                max = tf.reshape(delta, shape=(-1,)) + b_u
+                condition = tf.math.greater(b_l, b_u)[0]
+
+                output = tf.cond(condition, lambda: (b_l + b_u) / 2,
+                                 lambda: K.clip(input[..., 1], min_value=min, max_value=max))
+
+                delta_min, delta_max = self.delta_constraint
+                output = Lambda(lambda x: (delta_max - delta_min) * x + delta_min)(output)
+
+            else:
+                output = LeakyReLU(alpha=0.001)(output)
+                b_l = output[..., 0]
+                b_u = output[..., 1]
+                min = tf.reshape(delta, shape=(-1,)) - b_l
+                max = tf.reshape(delta, shape=(-1,)) + b_u
+                condition = tf.math.greater(b_l, b_u)[0]
+                output = tf.cond(condition, lambda: (b_l + b_u) / 2,
+                                 lambda: K.clip(input[..., 1], min_value=min, max_value=max))
 
         elif self.activation_output == "sigmoid" or self.activation_output == "tanh" or \
-            self.activation_output == "hard_sigmoid":
+                self.activation_output == "hard_sigmoid":
             # Enforcing hedge constraints (liquidity, costs, ..)
             if self.delta_constraint is not None:
-                b_l= Activation(self.activation_output)(output[..., 0])
-                b_u= Activation(self.activation_output)(output[..., 1])
+                b_l = Activation(self.activation_output)(output[..., 0])
+                b_u = Activation(self.activation_output)(output[..., 1])
                 min = tf.reshape(delta, shape=(-1,)) - b_l
                 max = tf.reshape(delta, shape=(-1,)) + b_u
+
+                condition = tf.math.greater(b_l, b_u)[0]
+                output = tf.cond(condition, lambda: (b_l + b_u) / 2,
+                                 lambda: K.clip(input[..., 1], min_value=min, max_value=max))
+
                 delta_min, delta_max = self.delta_constraint
-                condition_delta_l = b_l < delta_min
-                condition_delta_u = b_u > delta_max
-                min = tf.cond(condition_delta_l, lambda: delta_min, lambda: min)
-                max = tf.cond(condition_delta_u, lambda: delta_max, lambda: max)
-                #output = Lambda(lambda x : (delta_max-delta_min)*x + delta_min)(output)
-                condition = tf.math.greater(b_l, b_u)[0]
-                output = tf.cond(condition, lambda: (b_l+b_u)/2, lambda: K.clip(input[...,1], min_value=min, max_value=max))
-        
+                output = Lambda(lambda x: (delta_max - delta_min) * x + delta_min)(output)
+
             else:
-                b_l= Activation(self.activation_output)(output[..., 0])
-                b_u= Activation(self.activation_output)(output[..., 1])
+                b_l = Activation(self.activation_output)(output[..., 0])
+                b_u = Activation(self.activation_output)(output[..., 1])
                 min = tf.reshape(delta, shape=(-1,)) - b_l
                 max = tf.reshape(delta, shape=(-1,)) + b_u
                 condition = tf.math.greater(b_l, b_u)[0]
-                output = tf.cond(condition, lambda: (b_l+b_u)/2, lambda: K.clip(output[...,1], min_value=min, max_value=max))#input
-            
+                output = tf.cond(condition, lambda: (b_l + b_u) / 2,lambda: K.clip(input[..., 1], min_value=min, max_value=max))  # input
         return output
 
 def Deep_Hedging_Model_LSTM_CLAMP(N = None, d = None, m = None, delta = None,\
@@ -234,7 +248,7 @@ def Deep_Hedging_Model_LSTM_CLAMP(N = None, d = None, m = None, delta = None,\
             # Wealth for the final period
             # -delta_strategy = strategy_t
             mult = Dot(axes=1)([strategy, prc])
-            wealth = Add()([wealth, mult])
+            wealth = Add(name = "wealth_" + str(j))([wealth, mult])
                  
             # Add the terminal payoff of any derivatives.
             payoff = Input(shape=(1,), name = "payoff")

@@ -170,11 +170,11 @@ if __name__ == '__main__':
     epochs = args.epochs  # Number of epochs
 
     # Other parameters
-    use_batch_norm = False
+    use_batch_norm = True
     kernel_initializer = "he_uniform"
 
     activation_dense = "leaky_relu"
-    activation_output = "sigmoid"
+    activation_output = "leaky_relu"
     final_period_cost = False
 
     delta_constraint = (0.0, 1.0)
@@ -266,7 +266,9 @@ if __name__ == '__main__':
                                                               kernel_initializer=kernel_initializer,
                                                               activation_dense=activation_dense,
                                                               activation_output=activation_output,
-                                                              final_period_cost=final_period_cost)
+                                                              final_period_cost=final_period_cost,
+                                                              delta_constraint=delta_constraint
+                                                              )
     elif N_GPU == 1:
         with tf.device(gpus[0].name):
             model_recurrent = function_mappings[args.input_model](N=N, d=d, m=m, risk_free=risk_free,
@@ -276,7 +278,8 @@ if __name__ == '__main__':
                                                                   kernel_initializer=kernel_initializer,
                                                                   activation_dense=activation_dense,
                                                                   activation_output=activation_output,
-                                                                  final_period_cost=final_period_cost)
+                                                                  final_period_cost=final_period_cost,
+                                                              delta_constraint=delta_constraint)
 
     elif N_GPU > 1:
         print("Use all available GPU using Mirrored Strategy")
@@ -289,7 +292,8 @@ if __name__ == '__main__':
                                                                   kernel_initializer=kernel_initializer,
                                                                   activation_dense=activation_dense,
                                                                   activation_output=activation_output,
-                                                                  final_period_cost=final_period_cost)
+                                                                  final_period_cost=final_period_cost,
+                                                                  delta_constraint=delta_constraint)
 
     else:
         warnings.warn("Strange number of GPU")
@@ -417,7 +421,7 @@ if __name__ == '__main__':
 
     pd.DataFrame(Var).to_csv(outdir + figname + "_Var.csv")
 
-    ii = False
+    ii = True
     if ii:
 
         print("Plotting Wealth")
@@ -426,7 +430,7 @@ if __name__ == '__main__':
 
         model = model_recurrent
         change_wealth = list()
-        for w in range(N + 1):
+        for w in tqdm(range(N + 2),N + 2):
             intermediate_layer_model = Model(inputs=model.input,
                                              outputs=model.get_layer("wealth_%i" % w).output)
             change_wealth.append(intermediate_layer_model.predict(xtest))
