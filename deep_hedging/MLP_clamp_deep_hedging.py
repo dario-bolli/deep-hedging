@@ -11,7 +11,7 @@ from loss_metrics import CVaR
 from instruments import EuropeanCall
 import QuantLib as ql
 #from clamp import Clamp
-# import torch.nn.functional as fn
+import torch.nn.functional as fn
 
 intitalizer_dict = { 
     "he_normal": he_normal(),
@@ -25,7 +25,7 @@ bias_initializer=he_uniform()
 class Strategy_Layer(tf.keras.layers.Layer):
     def __init__(self, d = None, m = None, use_batch_norm = None, \
         kernel_initializer = "he_uniform", \
-        activation_dense = "relu", activation_output = "linear", 
+        activation_dense = "relu", activation_output = "leaky_relu", 
         delta_constraint = None, day = None):
         super().__init__(name = "delta_" + str(day))
         self.d = d
@@ -71,9 +71,9 @@ class Strategy_Layer(tf.keras.layers.Layer):
         output = self.output_dense(output)
 					 
         if self.activation_output == "leaky_relu":
-            output = LeakyReLU()(output)
-            b_l=  LeakyReLU()(output[..., 0])
-            b_u=  LeakyReLU()(output[..., 1])
+            output = LeakyReLU(alpha=0.001)(output)
+            b_l=  output[..., 0]
+            b_u=  output[..., 1]
             min = tf.reshape(delta, shape=(-1,)) - b_l
             max = tf.reshape(delta, shape = (-1,)) + b_u
             condition = tf.math.greater(b_l, b_u)[0]
@@ -106,13 +106,13 @@ class Strategy_Layer(tf.keras.layers.Layer):
             
         return output
 
-def Deep_Hedging_Model_MLP_CLAMP(N = None, d = None, m = None, delta = None,\
+def Deep_Hedging_Model(N = None, d = None, m = None, delta = None,\
         risk_free = None, dt = None, initial_wealth = 0.0, epsilon = 0.0, \
         final_period_cost = False, strategy_type = None, use_batch_norm = None, \
         kernel_initializer = "he_uniform", \
         activation_dense = "relu", activation_output = "linear", 
         delta_constraint = None, share_stretegy_across_time = False, 
-        cost_structure = "proportional",maxT=0):
+        cost_structure = "proportional"):
     
     
     # State variables.
