@@ -406,6 +406,8 @@ if __name__ == '__main__':
     output['Var50'] = np.quartile(Var, 0.50)
 
     output['Mean_PnL'] = np.mean(Var)
+    output['Var_PnL'] = np.std(Var)
+
     output['price'] = nn_simple_price
     output['price_BS'] = price_BS[0][0]
     output['price_free'] = risk_neutral_price
@@ -484,9 +486,9 @@ if __name__ == '__main__':
     fig_delta.suptitle("Black-Scholes Delta vs Deep Hedging Delta \n", \
                        fontweight="bold")
     ax_delta = fig_delta.add_subplot()
-    ax_delta.set_title("Simple Network Structure with " + \
-                       "t=" + str(days_from_today) + ", " + \
-                       "epsilon=" + str(epsilon), \
+    ax_delta.set_title("Simple Network Structure with " +
+                       "t=" + str(days_from_today) + ", " +
+                       "epsilon=" + str(epsilon),
                        fontsize=8)
     ax_delta.set_xlabel("Price of the Underlying Asset")
     ax_delta.set_ylabel("Delta")
