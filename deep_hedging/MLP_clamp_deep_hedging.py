@@ -25,7 +25,7 @@ bias_initializer=he_uniform()
 class Strategy_Layer(tf.keras.layers.Layer):
     def __init__(self, d = None, m = None, use_batch_norm = None, \
         kernel_initializer = "he_uniform", \
-        activation_dense = "relu", activation_output = "linear", 
+        activation_dense = "relu", activation_output = "leaky_relu", 
         delta_constraint = None, day = None):
         super().__init__(name = "delta_" + str(day))
         self.d = d
@@ -71,14 +71,28 @@ class Strategy_Layer(tf.keras.layers.Layer):
         output = self.output_dense(output)
 					 
         if self.activation_output == "leaky_relu":
-            output = LeakyReLU()(output)
-            b_l=  LeakyReLU()(output[..., 0])
-            b_u=  LeakyReLU()(output[..., 1])
-            min = tf.reshape(delta, shape=(-1,)) - b_l
-            max = tf.reshape(delta, shape = (-1,)) + b_u
-            condition = tf.math.greater(b_l, b_u)[0]
-            output = tf.cond(condition, lambda: (b_l+b_u)/2, lambda: K.clip(input[...,1], min_value=min, max_value=max))
-
+            if self.delta_constraint is not None:
+                output = LeakyReLU(alpha=0.001)(output)
+                b_l=  output[..., 0]
+                b_u=  output[..., 1]
+                min = tf.reshape(delta, shape=(-1,)) - b_l
+                max = tf.reshape(delta, shape = (-1,)) + b_u
+                delta_min, delta_max = self.delta_constraint
+                condition_delta_l = b_l < delta_min
+                condition_delta_u = b_u > delta_max
+                min = tf.cond(condition_delta_l, lambda: delta_min, lambda: min)
+                max = tf.cond(condition_delta_u, lambda: delta_max, lambda: max)
+                condition = tf.math.greater(b_l, b_u)[0]
+                output = tf.cond(condition, lambda: (b_l+b_u)/2, lambda: K.clip(input[...,1], min_value=min, max_value=max))
+            else:
+                output = LeakyReLU(alpha=0.001)(output)
+                b_l=  output[..., 0]
+                b_u=  output[..., 1]
+                min = tf.reshape(delta, shape=(-1,)) - b_l
+                max = tf.reshape(delta, shape = (-1,)) + b_u
+                condition = tf.math.greater(b_l, b_u)[0]
+                output = tf.cond(condition, lambda: (b_l+b_u)/2, lambda: K.clip(input[...,1], min_value=min, max_value=max))
+                
         elif self.activation_output == "sigmoid" or self.activation_output == "tanh" or \
             self.activation_output == "hard_sigmoid":
             # Enforcing hedge constraints (liquidity, costs, ..)
