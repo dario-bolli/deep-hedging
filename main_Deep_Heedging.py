@@ -441,93 +441,93 @@ if __name__ == '__main__':
         ax.set(ylabel='Wealth', xlabel='Days', title='Wealth movement')
         plt.savefig(outdir + figname + "_Wealth.png")
 
-    print("Plotting Deltas")
+        print("Plotting Deltas")
 
-    days_from_today = 15
-    tau = (N - days_from_today) * dt
+        days_from_today = 15
+        tau = (N - days_from_today) * dt
 
-    min_S = S_test[0][:, days_from_today].min()
-    max_S = S_test[0][:, days_from_today].max()
+        min_S = S_test[0][:, days_from_today].min()
+        max_S = S_test[0][:, days_from_today].max()
 
-    S_range = np.linspace(min_S * 0.6, max_S * 1.4, 101)
+        S_range = np.linspace(min_S * 0.6, max_S * 1.4, 101)
 
-    in_sample_range = S_range[np.any([S_range >= min_S, S_range <= max_S], axis=0)]
-    out_sample_range_low = S_range[S_range < min_S]
-    out_sample_range_high = S_range[S_range > max_S]
+        in_sample_range = S_range[np.any([S_range >= min_S, S_range <= max_S], axis=0)]
+        out_sample_range_low = S_range[S_range < min_S]
+        out_sample_range_high = S_range[S_range > max_S]
 
-    # Attention: Need to transform it to be consistent with the information set.
-    if information_set == "S":
-        I_range = S_range  # Information set
-    elif information_set == "log_S":
-        I_range = np.log(S_range)
-    elif information_set == "normalized_log_S":
-        I_range = np.log(S_range / S0)
-    else:
-        raise Exception("There is a bug in my code, invalid information_set, yet it should have been taken care of by "
-                        "the parser")
-    # Compute Black-Scholes delta for S_range.
-    # Reference: https://en.wikipedia.org/wiki/Greeks_(finance)
-    d1 = (np.log(S_range) - np.log(strike) + \
-          (risk_free - dividend + (sigma ** 2) / 2) * tau) \
-         / (sigma * np.sqrt(tau))
+        # Attention: Need to transform it to be consistent with the information set.
+        if information_set == "S":
+            I_range = S_range  # Information set
+        elif information_set == "log_S":
+            I_range = np.log(S_range)
+        elif information_set == "normalized_log_S":
+            I_range = np.log(S_range / S0)
+        else:
+            raise Exception("There is a bug in my code, invalid information_set, yet it should have been taken care of by "
+                            "the parser")
+        # Compute Black-Scholes delta for S_range.
+        # Reference: https://en.wikipedia.org/wiki/Greeks_(finance)
+        d1 = (np.log(S_range) - np.log(strike) + \
+              (risk_free - dividend + (sigma ** 2) / 2) * tau) \
+             / (sigma * np.sqrt(tau))
 
-    model_delta = norm.cdf(d1) * np.exp(-dividend * tau)
+        model_delta = norm.cdf(d1) * np.exp(-dividend * tau)
 
-    model = model_recurrent
-    intermediate_layer_model = Model(inputs=model.input,
-                                     outputs=model.get_layer("delta_%i" % days_from_today).output)
+        model = model_recurrent
+        intermediate_layer_model = Model(inputs=model.input,
+                                         outputs=model.get_layer("delta_%i" % days_from_today).output)
 
-    if "CLAMP" in args.input_model:
-        inputs = [Input(1, ), Input(1, )]
-        intermediate_inputs = Concatenate()(inputs)
+        if "CLAMP" in args.input_model:
+            inputs = [Input(1, ), Input(1, )]
+            intermediate_inputs = Concatenate()(inputs)
 
-        outputs = model.get_layer("delta_" + str(days_from_today))(intermediate_inputs
-                                                                   , model_delta.astype(np.float32))
-        MODEL = Model(inputs, outputs)
+            outputs = model.get_layer("delta_" + str(days_from_today))(intermediate_inputs
+                                                                       , model_delta.astype(np.float32))
+            MODEL = Model(inputs, outputs)
 
-        nn_delta = MODEL([I_range, I_range])
+            nn_delta = MODEL([I_range, I_range])
 
-    elif ("TCN" in args.input_model) | ("LSTM" in args.input_model):
-        # inputs = list()
-        # inW = list()
-        # for m in range(maxT):
-        #     inputs.append(Input(1,))
-        #     inW.append(I_range)
-        intermediate_inputs = Input(101,2,maxT)
+        elif ("TCN" in args.input_model) | ("LSTM" in args.input_model):
+            # inputs = list()
+            # inW = list()
+            # for m in range(maxT):
+            #     inputs.append(Input(1,))
+            #     inW.append(I_range)
+            intermediate_inputs = Input(101,2,maxT)
 
-        outputs = model.get_layer("delta_" + str(days_from_today))(intermediate_inputs)
+            outputs = model.get_layer("delta_" + str(days_from_today))(intermediate_inputs)
 
-        MODEL = Model(inputs, outputs)
+            MODEL = Model(inputs, outputs)
 
-        nn_delta = MODEL([[I_range, I_range], [I_range, I_range]])
+            nn_delta = MODEL([[I_range, I_range], [I_range, I_range]])
 
-    else:
-        inputs = [Input(1, ), Input(1, )]
-        intermediate_inputs = Concatenate()(inputs)
+        else:
+            inputs = [Input(1, ), Input(1, )]
+            intermediate_inputs = Concatenate()(inputs)
 
-        outputs = model.get_layer("delta_" + str(days_from_today))(intermediate_inputs)
-        MODEL = Model(inputs, outputs)
+            outputs = model.get_layer("delta_" + str(days_from_today))(intermediate_inputs)
+            MODEL = Model(inputs, outputs)
 
-        nn_delta = MODEL([I_range, I_range])
+            nn_delta = MODEL([I_range, I_range])
 
-    pd.DataFrame(nn_delta).to_csv(outdir + figname + "_delta.csv")
-    # Create a plot of Black-Scholes delta against deep hedging delta.
-    fig_delta = plt.figure(dpi=125, facecolor='w')
-    fig_delta.suptitle("Black-Scholes Delta vs Deep Hedging Delta \n", \
-                       fontweight="bold")
-    ax_delta = fig_delta.add_subplot()
-    ax_delta.set_title("Simple Network Structure with " +
-                       "t=" + str(days_from_today) + ", " +
-                       "epsilon=" + str(epsilon),
-                       fontsize=8)
-    ax_delta.set_xlabel("Price of the Underlying Asset")
-    ax_delta.set_ylabel("Delta")
-    ax_delta.plot(S_range, model_delta, label="Black-Scholes Delta")
-    ax_delta.scatter(in_sample_range, nn_delta[np.any([S_range >= min_S, S_range <= max_S], axis=0)], c="red", s=2,
-                     label="In-Range DH Delta")
-    ax_delta.scatter(out_sample_range_low, nn_delta[S_range < min_S], c="green", s=2, label="Out-of-Range DH Delta")
-    ax_delta.scatter(out_sample_range_high, nn_delta[S_range > max_S], c="green", s=2)
+            pd.DataFrame(nn_delta).to_csv(outdir + figname + "_delta.csv")
+            # Create a plot of Black-Scholes delta against deep hedging delta.
+            fig_delta = plt.figure(dpi=125, facecolor='w')
+            fig_delta.suptitle("Black-Scholes Delta vs Deep Hedging Delta \n", \
+                               fontweight="bold")
+            ax_delta = fig_delta.add_subplot()
+            ax_delta.set_title("Simple Network Structure with " +
+                               "t=" + str(days_from_today) + ", " +
+                               "epsilon=" + str(epsilon),
+                               fontsize=8)
+            ax_delta.set_xlabel("Price of the Underlying Asset")
+            ax_delta.set_ylabel("Delta")
+            ax_delta.plot(S_range, model_delta, label="Black-Scholes Delta")
+            ax_delta.scatter(in_sample_range, nn_delta[np.any([S_range >= min_S, S_range <= max_S], axis=0)], c="red", s=2,
+                             label="In-Range DH Delta")
+            ax_delta.scatter(out_sample_range_low, nn_delta[S_range < min_S], c="green", s=2, label="Out-of-Range DH Delta")
+            ax_delta.scatter(out_sample_range_high, nn_delta[S_range > max_S], c="green", s=2)
 
-    ax_delta.legend()
+            ax_delta.legend()
 
-    plt.savefig(outdir + figname + "_delta_15.png")
+            plt.savefig(outdir + figname + "_delta_15.png")
