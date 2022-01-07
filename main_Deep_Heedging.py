@@ -200,7 +200,6 @@ if __name__ == '__main__':
 
     S = stochastic_process.gen_path(maturity, N, nobs)
 
-
     print("\n\ns0 = " + str(S0))
     print("sigma = " + str(sigma))
     print("risk_free = " + str(risk_free) + "\n")
@@ -229,7 +228,7 @@ if __name__ == '__main__':
                                               exercise_date=maturity_date,
                                               calculation_date=calculation_date,
                                               day_count=day_count, dt=dt))
-        # Structure of xtrain:
+    # Structure of xtrain:
     #   1) Trade set: [S]
     #   2) Information set: [S]
     #   3) payoff (dim = 1)
@@ -281,7 +280,7 @@ if __name__ == '__main__':
                                                                   activation_dense=activation_dense,
                                                                   activation_output=activation_output,
                                                                   final_period_cost=final_period_cost,
-                                                              delta_constraint=delta_constraint)
+                                                                  delta_constraint=delta_constraint)
 
     elif N_GPU > 1:
         print("Use all available GPU using Mirrored Strategy")
@@ -383,9 +382,6 @@ if __name__ == '__main__':
 
     plt.savefig(outdir + figname + "_PnL.png")
 
-
-
-
     output = pd.Series()
 
 
@@ -418,22 +414,19 @@ if __name__ == '__main__':
     output['price_BS'] = price_BS[0][0]
     output['price_free'] = risk_neutral_price
 
-
     output.to_csv(outdir + figname + "_pd.csv")
 
     pd.DataFrame(Var).to_csv(outdir + figname + "_Var.csv")
 
-    ii = True
+    ii = False
     if ii:
 
         print("Plotting Wealth")
 
-
-
         model = model_recurrent
         change_wealth = list()
         for w in tqdm(range(N + 2)):
-            #print("looking for wealth d=" + w, end='\r')
+            # print("looking for wealth d=" + w, end='\r')
 
             intermediate_layer_model = Model(inputs=model.input,
                                              outputs=model.get_layer("wealth_%i" % w).output)
@@ -447,7 +440,6 @@ if __name__ == '__main__':
 
         ax.set(ylabel='Wealth', xlabel='Days', title='Wealth movement')
         plt.savefig(outdir + figname + "_Wealth.png")
-
 
     print("Plotting Deltas")
 
@@ -485,20 +477,38 @@ if __name__ == '__main__':
     intermediate_layer_model = Model(inputs=model.input,
                                      outputs=model.get_layer("delta_%i" % days_from_today).output)
 
-
-    inputs = [Input(1, ), Input(1, )]
-    intermediate_inputs = Concatenate()(inputs)
-
     if "CLAMP" in args.input_model:
+        inputs = [Input(1, ), Input(1, )]
+        intermediate_inputs = Concatenate()(inputs)
+
         outputs = model.get_layer("delta_" + str(days_from_today))(intermediate_inputs
                                                                    , model_delta.astype(np.float32))
-    else:
+        MODEL = Model(inputs, outputs)
+
+        nn_delta = MODEL([I_range, I_range])
+
+    elif ("TCN" in args.input_model) | ("LSTM" in args.input_model):
+        # inputs = list()
+        # inW = list()
+        # for m in range(maxT):
+        #     inputs.append(Input(1,))
+        #     inW.append(I_range)
+        intermediate_inputs = Input(101,2,maxT)
+
         outputs = model.get_layer("delta_" + str(days_from_today))(intermediate_inputs)
 
+        MODEL = Model(inputs, outputs)
 
-    MODEL = Model(inputs, outputs)
+        nn_delta = MODEL([[I_range, I_range], [I_range, I_range]])
 
-    nn_delta = MODEL([I_range, I_range])
+    else:
+        inputs = [Input(1, ), Input(1, )]
+        intermediate_inputs = Concatenate()(inputs)
+
+        outputs = model.get_layer("delta_" + str(days_from_today))(intermediate_inputs)
+        MODEL = Model(inputs, outputs)
+
+        nn_delta = MODEL([I_range, I_range])
 
     pd.DataFrame(nn_delta).to_csv(outdir + figname + "_delta.csv")
     # Create a plot of Black-Scholes delta against deep hedging delta.
