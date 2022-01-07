@@ -11,9 +11,9 @@ source myenv/bin/activate
 
 # If you want more info about available options of the main, do python ./main_Deep_Heedging.py -h
 
-for d in 5 10 15 30
+for d in 1 2
 do
-  for m in 1 2
+  for m in 5 10 15 30
   do
     for maxT in  1  3 6 11 30
     do
