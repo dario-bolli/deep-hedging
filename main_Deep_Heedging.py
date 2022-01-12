@@ -352,6 +352,7 @@ if __name__ == '__main__':
 
     risk_neutral_price = \
         -option_payoff_test[0].mean() * np.exp(-risk_free * (N * dt))
+
     nn_price = model_recurrent.evaluate(xtest, batch_size=batch_size, verbose=0)
 
     print("The Black-Scholes model price is %2.3f." % price_BS[0][0])
@@ -359,9 +360,9 @@ if __name__ == '__main__':
 
     print("Plotting PnL")
     bar1 = PnL_BS + risk_neutral_price
-    Var = model_recurrent.fit(xtestxtest, batch_size=batch_size).numpy().squeeze()
+    Var = model_recurrent.predict(xtest, batch_size=batch_size).squeeze()
     bar2 = Var + risk_neutral_price
-
+### HEERE
     # Plot Black-Scholes PnL and Deep Hedging PnL (with risk_neutral_price charged on both).
     fig_PnL = plt.figure(dpi=125, facecolor='w')
     fig_PnL.suptitle("Black-Scholes PnL vs Deep Hedging PnL \n",
@@ -454,7 +455,6 @@ if __name__ == '__main__':
 
         days_from_today = 15
         tau = (N - days_from_today) * dt
-        batch_size = test_size
         min_S = S_test[0][:, days_from_today].min()
         max_S = S_test[0][:, days_from_today].max()
 
@@ -466,11 +466,11 @@ if __name__ == '__main__':
         out_sample_range_high = S_range[S_range > max_S]
 
         # Attention: Need to transform it to be consistent with the information set.
-        if information_set is "S":
+        if information_set == "S":
             I_range = S_range  # Information set
-        elif information_set is "log_S":
+        elif information_set == "log_S":
             I_range = np.log(S_range)
-        elif information_set is "normalized_log_S":
+        elif information_set == "normalized_log_S":
             I_range = np.log(S_range / S0)
 
             # Compute Black-Scholes delta for S_range.

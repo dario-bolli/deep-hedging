@@ -21,7 +21,7 @@ do
            -R "rusage[mem=9600]" -R "rusage[ngpus_excl_p=1]" \
             python main_Deep_Heedging.py --d $d --maxT $maxT \
              --epochs 100 --model Deep_Hedging_Model_MLP_CLAMP \
-             --m $m
+             --m $m --Delta
     done
   done
 done
