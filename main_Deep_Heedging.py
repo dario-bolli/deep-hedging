@@ -91,8 +91,8 @@ if __name__ == '__main__':
                         help='Number of hidden layers default: 1')
     parser.add_argument('--m', default=15, type=int,
                         help='Number of neurons in each hidden layer default: 15')
-    parser.add_argument('--maxT', default=5, type=int,
-                        help='Time step default: 5')
+    parser.add_argument('--maxT', default=6, type=int,
+                        help='Time step default: 6')
 
     parser.add_argument('--batch', default=256, type=int,
                         help='batch_size default: 256')
@@ -419,7 +419,7 @@ if __name__ == '__main__':
     output['Mean_PnL'] = np.mean(Var)
     output['Std_PnL'] = np.std(Var)
 
-    output['price'] = nn_simple_price
+    output['price'] = nn_price
     output['price_BS'] = price_BS[0][0]
     output['price_free'] = risk_neutral_price
 
