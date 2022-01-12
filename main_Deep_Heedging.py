@@ -210,8 +210,9 @@ if __name__ == '__main__':
     stochastic_process = BlackScholesProcess(s0=S0, sigma=sigma, risk_free=risk_free, \
                                              dividend=dividend, day_count=day_count, seed=seed)
 
-    S = stochastic_process.gen_path(maturity, N, nobs)
-
+    #S = stochastic_process.gen_path(maturity, N, nobs)
+    S = np.load("Generated_Data.npy")
+    delta_BS = np.load("Generated_BS.npy")
     print("\n\ns0 = " + str(S0))
     print("sigma = " + str(sigma))
     print("risk_free = " + str(risk_free) + "\n")
@@ -234,13 +235,13 @@ if __name__ == '__main__':
     else:
         raise Exception("There is a bug somewhere in the code, invalid information_set, yet it should have been taken "
                         "care of by the parser")
-    call = EuropeanCall()
-    delta_BS = np.transpose(call.get_BS_delta(S=np.transpose(trade_set), sigma=sigma,
-                                              risk_free=risk_free, dividend=dividend, K=strike,
-                                              exercise_date=maturity_date,
-                                              calculation_date=calculation_date,
-                                              day_count=day_count, dt=dt))
-    # Structure of xtrain:
+    # call = EuropeanCall()
+    # delta_BS = np.transpose(call.get_BS_delta(S=np.transpose(trade_set), sigma=sigma,
+    #                                           risk_free=risk_free, dividend=dividend, K=strike,
+    #                                           exercise_date=maturity_date,
+    #                                           calculation_date=calculation_date,
+    #                                           day_count=day_count, dt=dt))
+    # # Structure of xtrain:
     #   1) Trade set: [S]
     #   2) Information set: [S]
     #   3) If clamp : BS Delta
