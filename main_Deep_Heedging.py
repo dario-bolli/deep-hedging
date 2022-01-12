@@ -318,9 +318,9 @@ if __name__ == '__main__':
 
     model_recurrent.compile(optimizer=optimizer)
 
-    early_stopping = EarlyStopping(monitor="loss",
+    early_stopping = EarlyStopping(monitor="val_loss",
                                    patience=10, min_delta=1e-4, restore_best_weights=True)
-    reduce_lr = ReduceLROnPlateau(monitor="loss",
+    reduce_lr = ReduceLROnPlateau(monitor="val_loss",
                                   factor=0.5, patience=2, min_delta=1e-4, verbose=0)
 
     callbacks = [early_stopping, reduce_lr]
@@ -453,7 +453,7 @@ if __name__ == '__main__':
 
         print("Plotting Deltas")
 
-        days_from_today = 15
+        days_from_today = 20
         tau = (N - days_from_today) * dt
         min_S = S_test[0][:, days_from_today].min()
         max_S = S_test[0][:, days_from_today].max()
@@ -492,8 +492,8 @@ if __name__ == '__main__':
         intermediate_layer_modelP = Model(inputs=model_recurrent.input,
                                           outputs=model_recurrent.get_layer("prc_%i" % days_from_today).output)
 
-        delta = intermediate_layer_modelD.predict(xtest, batch_size=batch_size)
-        price = intermediate_layer_modelP.predict(xtest, batch_size=batch_size)
+        delta = intermediate_layer_modelD.predict(xtest, batch_size=test_size)
+        price = intermediate_layer_modelP.predict(xtest, batch_size=test_size)
 
         delta_price = pd.DataFrame(0, index=range(price.shape[0]), columns=['Price', 'Delta'])
         delta_price['Price'] = price
