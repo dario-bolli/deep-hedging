@@ -41,7 +41,10 @@ from utilities import train_test_split
 
 import argparse
 
-# print("\nFinish installing and importing all necessary libraries!")
+
+def cvar(wealth, w, alpha):
+    return np.mean(w + (np.maximum(-wealth - w, 0) / (1 - alpha)))
+
 
 if __name__ == '__main__':
     function_mappings = {
@@ -106,10 +109,19 @@ if __name__ == '__main__':
 
     parser.add_argument('--figname', default="Default", type=str,
                         help='Name for output (fig and file)  default : combination of arguments (m, d, maxT, '
-                             'epsilon, args.input_model)')
+                             'epsilon, args.input_model, activation_output)')
+
+    parser.add_argument('--Wealth', dest='plot_W', action='store_true',
+                        help='Use to plot wealth figure (Warning: Huge increase in running time)')
+
+    parser.add_argument('--Delta', dest='plot_D', action='store_true',
+                        help='Use to plot delta figure (Warning: Not available for Clamp)')
 
     parser.add_argument('--outdir', default="Default", type=str,
                         help='Name for output dir default : working directory')
+
+    parser.add_argument('--acti_output', default="sigmoid", type=str,
+                        help='activation_output either sigmoid or leaky_ReLu default : sigmoid')
 
     # parser.print_help()
     args = parser.parse_args()
@@ -176,7 +188,7 @@ if __name__ == '__main__':
     kernel_initializer = "he_uniform"
 
     activation_dense = "leaky_relu"
-    activation_output = "leaky_relu"
+    activation_output = args.acti_output
     final_period_cost = False
 
     delta_constraint = (0.0, 1.0)
@@ -220,8 +232,8 @@ if __name__ == '__main__':
     elif information_set == "normalized_log_S":
         info = np.stack((np.log(S / S0)), axis=1)
     else:
-        raise Exception("There is a bug in my code, invalid information_set, yet it should have been taken care of by "
-                        "the parser")
+        raise Exception("There is a bug somewhere in the code, invalid information_set, yet it should have been taken "
+                        "care of by the parser")
     call = EuropeanCall()
     delta_BS = np.transpose(call.get_BS_delta(S=np.transpose(trade_set), sigma=sigma,
                                               risk_free=risk_free, dividend=dividend, K=strike,
@@ -231,15 +243,17 @@ if __name__ == '__main__':
     # Structure of xtrain:
     #   1) Trade set: [S]
     #   2) Information set: [S]
-    #   3) payoff (dim = 1)
+    #   3) If clamp : BS Delta
+    #   4) payoff (dim = 1)
     x_all = []
     for i in range(N + 1):
         x_all += [trade_set[i, :, None]]
+        if i != N:
+            x_all += [info[i, :, None]]
+
         if "CLAMP" in args.input_model:
             x_all += [delta_BS[i, :, None]]
 
-        if i != N:
-            x_all += [info[i, :, None]]
     x_all += [payoff_T[:, None]]
 
     # Split the entire sample into a training sample and a testing sample.
@@ -251,7 +265,6 @@ if __name__ == '__main__':
 
     print("Finish preparing data!")
 
-    # @title <font color='Blue'>**Run the Deep Hedging Algorithm (Recurrent Network)!**</font>
     optimizer = Adam(learning_rate=lr)
 
     # Setup and compile the model
@@ -261,7 +274,8 @@ if __name__ == '__main__':
 
     if N_GPU == 0:
         model_recurrent = function_mappings[args.input_model](N=N, d=d, m=m, risk_free=risk_free,
-                                                              dt=dt, strategy_type="recurrent", epsilon=epsilon,
+                                                              dt=dt,
+                                                              epsilon=epsilon,
                                                               maxT=maxT,
                                                               use_batch_norm=use_batch_norm,
                                                               kernel_initializer=kernel_initializer,
@@ -273,7 +287,7 @@ if __name__ == '__main__':
     elif N_GPU == 1:
         with tf.device(gpus[0].name):
             model_recurrent = function_mappings[args.input_model](N=N, d=d, m=m, risk_free=risk_free,
-                                                                  dt=dt, strategy_type="recurrent", epsilon=epsilon,
+                                                                  dt=dt, epsilon=epsilon,
                                                                   maxT=maxT,
                                                                   use_batch_norm=use_batch_norm,
                                                                   kernel_initializer=kernel_initializer,
@@ -287,7 +301,7 @@ if __name__ == '__main__':
         strategy = tf.distribute.MirroredStrategy(gpus)
         with strategy.scope():
             model_recurrent = function_mappings[args.input_model](N=N, d=d, m=m, risk_free=risk_free,
-                                                                  dt=dt, strategy_type="recurrent", epsilon=epsilon,
+                                                                  dt=dt, epsilon=epsilon,
                                                                   maxT=maxT,
                                                                   use_batch_norm=use_batch_norm,
                                                                   kernel_initializer=kernel_initializer,
@@ -297,14 +311,12 @@ if __name__ == '__main__':
                                                                   delta_constraint=delta_constraint)
 
     else:
-        warnings.warn("Strange number of GPU")
+        raise Exception("Strange number of GPU")
 
     loss = Entropy(model_recurrent.output, None, loss_param)
     model_recurrent.add_loss(loss)
 
     model_recurrent.compile(optimizer=optimizer)
-
-    # model_recurrent.summary()
 
     early_stopping = EarlyStopping(monitor="loss",
                                    patience=10, min_delta=1e-4, restore_best_weights=True)
@@ -340,23 +352,17 @@ if __name__ == '__main__':
 
     risk_neutral_price = \
         -option_payoff_test[0].mean() * np.exp(-risk_free * (N * dt))
-    nn_simple_price = model_recurrent.evaluate(xtest, batch_size=test_size, verbose=0)
+    nn_price = model_recurrent.evaluate(xtest, batch_size=batch_size, verbose=0)
 
     print("The Black-Scholes model price is %2.3f." % price_BS[0][0])
-    print("The Risk Neutral price is %2.3f." % risk_neutral_price)
-    print("The Deep Hedging (with simple network) price is %2.3f." % nn_simple_price)
-
-    try:
-        nn_recurrent_price = model_recurrent.evaluate(xtest, batch_size=test_size, verbose=0)
-        print("The Deep Hedging (with recurrent network) price is %2.3f." % nn_recurrent_price)
-    except:
-        print("No Recurrent model.")
+    print("The Deep Hedging price is %2.3f." % nn_price)
 
     print("Plotting PnL")
-    bar1 = PnL_BS + price_BS[0][0]
-    bar2 = model_recurrent(xtest).numpy().squeeze() + price_BS[0][0]
+    bar1 = PnL_BS + risk_neutral_price
+    Var = model_recurrent.fit(xtestxtest, batch_size=batch_size).numpy().squeeze()
+    bar2 = Var + risk_neutral_price
 
-    # Plot Black-Scholes PnL and Deep Hedging PnL (with BS_price charged on both).
+    # Plot Black-Scholes PnL and Deep Hedging PnL (with risk_neutral_price charged on both).
     fig_PnL = plt.figure(dpi=125, facecolor='w')
     fig_PnL.suptitle("Black-Scholes PnL vs Deep Hedging PnL \n",
                      fontweight="bold")
@@ -371,7 +377,7 @@ if __name__ == '__main__':
     # plt.show()
 
     if args.figname == "Default":
-        figname = "%i_%i_%i_%s_%s" % (m, d, maxT, str(epsilon), args.input_model)
+        figname = "%i_%i_%i_%s_%s_%s" % (m, d, maxT, str(epsilon), args.input_model, activation_output)
     else:
         figname = args.figname
 
@@ -384,12 +390,6 @@ if __name__ == '__main__':
 
     output = pd.Series()
 
-
-    def cvar(wealth, w, alpha):
-        return np.mean(w + (np.maximum(-wealth - w, 0) / (1 - alpha)))
-
-
-    Var = model_recurrent(xtest).numpy().squeeze()
     output['d'] = d
     output['m'] = m
     output['maxT'] = maxT
@@ -400,12 +400,20 @@ if __name__ == '__main__':
     output['CVar90'] = cvar(Var, risk_neutral_price, 0.90)
     output['CVar80'] = cvar(Var, risk_neutral_price, 0.80)
     output['CVar50'] = cvar(Var, risk_neutral_price, 0.50)
+    output['CVar20'] = cvar(Var, risk_neutral_price, 0.20)
+    output['CVar10'] = cvar(Var, risk_neutral_price, 0.10)
+    output['CVar5'] = cvar(Var, risk_neutral_price, 0.05)
+    output['CVar1'] = cvar(Var, risk_neutral_price, 0.01)
 
     output['Var99'] = np.quantile(Var, 0.99)
     output['Var95'] = np.quantile(Var, 0.95)
     output['Var90'] = np.quantile(Var, 0.90)
     output['Var80'] = np.quantile(Var, 0.80)
     output['Var50'] = np.quantile(Var, 0.50)
+    output['Var20'] = np.quantile(Var, 0.20)
+    output['Var10'] = np.quantile(Var, 0.10)
+    output['Var5'] = np.quantile(Var, 0.05)
+    output['Var1'] = np.quantile(Var, 0.01)
 
     output['Mean_PnL'] = np.mean(Var)
     output['Std_PnL'] = np.std(Var)
@@ -418,21 +426,20 @@ if __name__ == '__main__':
 
     pd.DataFrame(Var).to_csv(outdir + figname + "_Var.csv")
 
-    ii = False
-    if ii:
+    if args.plot_W:
 
         print("Plotting Wealth")
 
-        model = model_recurrent
         change_wealth = list()
         for w in tqdm(range(N + 2)):
             # print("looking for wealth d=" + w, end='\r')
 
-            intermediate_layer_model = Model(inputs=model.input,
-                                             outputs=model.get_layer("wealth_%i" % w).output)
+            intermediate_layer_model = Model(inputs=model_recurrent.input,
+                                             outputs=model_recurrent.get_layer("wealth_%i" % w).output)
             change_wealth.append(intermediate_layer_model.predict(xtest))
 
         wealths = pd.DataFrame(np.array(change_wealth)[:, :, 0])
+        wealths.to_csv(outdir + figname + "_Wealth.csv")
         fig, ax = plt.subplots()
 
         # ax.plot(options[0],label='options')
@@ -441,93 +448,76 @@ if __name__ == '__main__':
         ax.set(ylabel='Wealth', xlabel='Days', title='Wealth movement')
         plt.savefig(outdir + figname + "_Wealth.png")
 
+    if args.plot_D:
+
         print("Plotting Deltas")
 
         days_from_today = 15
         tau = (N - days_from_today) * dt
-
+        batch_size = test_size
         min_S = S_test[0][:, days_from_today].min()
         max_S = S_test[0][:, days_from_today].max()
 
-        S_range = np.linspace(min_S * 0.6, max_S * 1.4, 101)
+        S_range = np.linspace(min_S, max_S, 101)
+        S_range2 = np.linspace(min_S * 0.9, max_S * 1.1, 101)
 
         in_sample_range = S_range[np.any([S_range >= min_S, S_range <= max_S], axis=0)]
         out_sample_range_low = S_range[S_range < min_S]
         out_sample_range_high = S_range[S_range > max_S]
 
         # Attention: Need to transform it to be consistent with the information set.
-        if information_set == "S":
+        if information_set is "S":
             I_range = S_range  # Information set
-        elif information_set == "log_S":
+        elif information_set is "log_S":
             I_range = np.log(S_range)
-        elif information_set == "normalized_log_S":
+        elif information_set is "normalized_log_S":
             I_range = np.log(S_range / S0)
-        else:
-            raise Exception("There is a bug in my code, invalid information_set, yet it should have been taken care of by "
-                            "the parser")
-        # Compute Black-Scholes delta for S_range.
+
+            # Compute Black-Scholes delta for S_range.
         # Reference: https://en.wikipedia.org/wiki/Greeks_(finance)
         d1 = (np.log(S_range) - np.log(strike) + \
               (risk_free - dividend + (sigma ** 2) / 2) * tau) \
              / (sigma * np.sqrt(tau))
 
+        d12 = (np.log(S_range2) - np.log(strike) + \
+               (risk_free - dividend + (sigma ** 2) / 2) * tau) \
+              / (sigma * np.sqrt(tau))
+
         model_delta = norm.cdf(d1) * np.exp(-dividend * tau)
+        model_delta2 = norm.cdf(d12) * np.exp(-dividend * tau)
 
-        model = model_recurrent
-        intermediate_layer_model = Model(inputs=model.input,
-                                         outputs=model.get_layer("delta_%i" % days_from_today).output)
+        intermediate_layer_modelD = Model(inputs=model_recurrent.input,
+                                          outputs=model_recurrent.get_layer("delta_%i" % days_from_today).output)
 
-        if "CLAMP" in args.input_model:
-            inputs = [Input(1, ), Input(1, )]
-            intermediate_inputs = Concatenate()(inputs)
+        intermediate_layer_modelP = Model(inputs=model_recurrent.input,
+                                          outputs=model_recurrent.get_layer("prc_%i" % days_from_today).output)
 
-            outputs = model.get_layer("delta_" + str(days_from_today))(intermediate_inputs
-                                                                       , model_delta.astype(np.float32))
-            MODEL = Model(inputs, outputs)
+        delta = intermediate_layer_modelD.predict(xtest, batch_size=batch_size)
+        price = intermediate_layer_modelP.predict(xtest, batch_size=batch_size)
 
-            nn_delta = MODEL([I_range, I_range])
+        delta_price = pd.DataFrame(0, index=range(price.shape[0]), columns=['Price', 'Delta'])
+        delta_price['Price'] = price
+        delta_price['Delta'] = delta
+        delta_price.to_csv(outdir + figname + "_delta_pd.csv")
 
-        elif ("TCN" in args.input_model) | ("LSTM" in args.input_model):
-            # inputs = list()
-            # inW = list()
-            # for m in range(maxT):
-            #     inputs.append(Input(1,))
-            #     inW.append(I_range)
-            intermediate_inputs = Input(101,2,maxT)
+        # Create a plot of Black-Scholes delta against deep hedging delta.
+        fig_delta = plt.figure(dpi=125, facecolor='w')
+        fig_delta.suptitle("Black-Scholes Delta vs Deep Hedging Delta \n", \
+                           fontweight="bold")
+        ax_delta = fig_delta.add_subplot()
+        ax_delta.set_title("Structure with " + \
+                           "t=" + str(days_from_today) + ", " + \
+                           "epsilon=" + str(epsilon), \
+                           fontsize=8)
 
-            outputs = model.get_layer("delta_" + str(days_from_today))(intermediate_inputs)
+        ax_delta.set_xlabel("Price of the Underlying Asset")
+        ax_delta.set_ylabel("Delta")
+        ax_delta.plot(S_range2, model_delta2, label="Black-Scholes Delta2")
 
-            MODEL = Model(inputs, outputs)
+        ax_delta.plot(S_range, model_delta, label="Black-Scholes Delta")
 
-            nn_delta = MODEL([[I_range, I_range], [I_range, I_range]])
+        ax_delta.scatter(price, delta, c="green", s=2, label='Deep learning Delta')
 
-        else:
-            inputs = [Input(1, ), Input(1, )]
-            intermediate_inputs = Concatenate()(inputs)
+        ax_delta.legend()
 
-            outputs = model.get_layer("delta_" + str(days_from_today))(intermediate_inputs)
-            MODEL = Model(inputs, outputs)
-
-            nn_delta = MODEL([I_range, I_range])
-
-            pd.DataFrame(nn_delta).to_csv(outdir + figname + "_delta.csv")
-            # Create a plot of Black-Scholes delta against deep hedging delta.
-            fig_delta = plt.figure(dpi=125, facecolor='w')
-            fig_delta.suptitle("Black-Scholes Delta vs Deep Hedging Delta \n", \
-                               fontweight="bold")
-            ax_delta = fig_delta.add_subplot()
-            ax_delta.set_title("Simple Network Structure with " +
-                               "t=" + str(days_from_today) + ", " +
-                               "epsilon=" + str(epsilon),
-                               fontsize=8)
-            ax_delta.set_xlabel("Price of the Underlying Asset")
-            ax_delta.set_ylabel("Delta")
-            ax_delta.plot(S_range, model_delta, label="Black-Scholes Delta")
-            ax_delta.scatter(in_sample_range, nn_delta[np.any([S_range >= min_S, S_range <= max_S], axis=0)], c="red", s=2,
-                             label="In-Range DH Delta")
-            ax_delta.scatter(out_sample_range_low, nn_delta[S_range < min_S], c="green", s=2, label="Out-of-Range DH Delta")
-            ax_delta.scatter(out_sample_range_high, nn_delta[S_range > max_S], c="green", s=2)
-
-            ax_delta.legend()
-
-            plt.savefig(outdir + figname + "_delta_15.png")
+        plt.savefig(outdir + figname + "_delta_15.png")

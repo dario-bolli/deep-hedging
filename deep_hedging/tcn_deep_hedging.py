@@ -173,41 +173,27 @@ def Deep_Hedging_Model_TCN(N=None, d=None, m=None, \
     for j in range(N + 1):
         if j < N:
             # Define the inputs for the strategy layers here.
-            if strategy_type == "simple":
-                helper = information_set
-            elif strategy_type == "recurrent":
-                if j == 0:
-                    # Tensorflow hack to deal with the dimension problem.
-                    #   Strategy at t = -1 should be 0.
-                    # There is probably a better way but this works.
-                    # Constant tensor doesn't work.
-                    strategy = Lambda(lambda x: x * 0.0)(prc)
-                    helper1 = Concatenate()([information_set, strategy])
-                    sequence.append(helper1)
 
+            if j == 0:
+                # Tensorflow hack to deal with the dimension problem.
+                #   Strategy at t = -1 should be 0.
+                # There is probably a better way but this works.
+                # Constant tensor doesn't work.
+                strategy = Lambda(lambda x: x * 0.0)(prc)
                 helper1 = Concatenate()([information_set, strategy])
                 sequence.append(helper1)
-                helper = tf.stack(sequence[-maxT:], axis=1)
+
+            helper1 = Concatenate()([information_set, strategy])
+            sequence.append(helper1)
+            helper = tf.stack(sequence[-maxT:], axis=1)
             # Determine if the strategy function depends on time t or not.
-            if not share_stretegy_across_time:
-                strategy_layer = TCN_Strategy_Layer(d=d, m=m,
+            strategy_layer = TCN_Strategy_Layer(d=d, m=m,
                                                     use_batch_norm=use_batch_norm, \
                                                     kernel_initializer=kernel_initializer, \
                                                     activation_dense=activation_dense, \
                                                     activation_output=activation_output,
                                                     delta_constraint=delta_constraint, \
                                                     day=j)
-            else:
-                if j == 0:
-                    # Strategy does not depend on t so there's only a single
-                    # layer at t = 0
-                    strategy_layer = TCN_Strategy_Layer(d=d, m=m,
-                                                        use_batch_norm=use_batch_norm, \
-                                                        kernel_initializer=kernel_initializer, \
-                                                        activation_dense=activation_dense, \
-                                                        activation_output=activation_output,
-                                                        delta_constraint=delta_constraint, \
-                                                        day=j)
 
             strategyhelper = strategy_layer(helper, training=True)  # strategy
 

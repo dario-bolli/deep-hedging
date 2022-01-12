@@ -32,16 +32,26 @@ class Strategy_Layer(tf.keras.layers.Layer):
         self.delta_constraint = delta_constraint
         self.kernel_initializer = kernel_initializer
 
-        self.intermediate_dense = [None for _ in range(d)]
+        self.intermediate_lstm = [None for _ in range(d)]
         self.intermediate_BN = [None for _ in range(d)]
 
         for i in range(d):
-            self.intermediate_dense[i] = Dense(self.m,
-                                               kernel_initializer=self.kernel_initializer,
-                                               bias_initializer=bias_initializer,
-                                               use_bias=(not self.use_batch_norm))
-            if self.use_batch_norm:
-                self.intermediate_BN[i] = BatchNormalization(momentum=0.99, trainable=True)
+            if i < d - 1:
+                self.intermediate_lstm[i] = LSTM(self.m,
+                                                 kernel_initializer=self.kernel_initializer,
+                                                 bias_initializer=bias_initializer,
+                                                 use_bias=(not self.use_batch_norm),
+                                                 return_sequences=True)
+                if self.use_batch_norm:
+                    self.intermediate_BN[i] = BatchNormalization(momentum=0.99, trainable=True)
+            else:
+                self.intermediate_lstm[i] = LSTM(self.m,
+                                                 kernel_initializer=self.kernel_initializer,
+                                                 bias_initializer=bias_initializer,
+                                                 use_bias=(not self.use_batch_norm),
+                                                 return_sequences=False)
+                if self.use_batch_norm:
+                    self.intermediate_BN[i] = BatchNormalization(momentum=0.99, trainable=True)
 
         self.output_dense = Dense(1,
                                   kernel_initializer=self.kernel_initializer,
@@ -49,7 +59,6 @@ class Strategy_Layer(tf.keras.layers.Layer):
                                   use_bias=True)
 
     def call(self, input):
-        print('SS')
 
         for i in range(self.d):
             if i == 0:
@@ -85,11 +94,10 @@ class Strategy_Layer(tf.keras.layers.Layer):
 
 def Deep_Hedging_Model_LSTM(N=None, d=None, m=None, \
                             risk_free=None, dt=None, initial_wealth=0.0, epsilon=0.0, maxT=5, \
-                            final_period_cost=False, strategy_type="recurrent", use_batch_norm=None, \
+                            final_period_cost=False, use_batch_norm=None, \
                             kernel_initializer="he_uniform", \
                             activation_dense="relu", activation_output="linear",
-                            delta_constraint=None, share_stretegy_across_time=False,
-                            cost_structure="proportional"):
+                            delta_constraint=None, cost_structure="proportional"):
     # State variables.
     past_strategy = list()
     prc = Input(shape=(1,), name="prc_0")
@@ -99,18 +107,13 @@ def Deep_Hedging_Model_LSTM(N=None, d=None, m=None, \
 
     for j in range(N + 1):
         if j < N:
-            # Define the inputs for the strategy layers here.
-            if strategy_type == "simple":
-                helper1 = information_set
-                sys.Warning("Model set to simple, not tested, if you do not know what ",
-                            " you are doing,use recurrent")
-            elif strategy_type == "recurrent":
-                if j == 0:
-                    # Tensorflow hack to deal with the dimension problem.
-                    #   Strategy at t = -1 should be 0.
-                    # There is probably a better way but this works.
-                    # Constant tensor doesn't work.
-                    strategy = Lambda(lambda x: x * 0.0)(prc)
+
+            if j == 0:
+                # Tensorflow hack to deal with the dimension problem.
+                #   Strategy at t = -1 should be 0.
+                # There is probably a better way but this works.
+                # Constant tensor doesn't work.
+                strategy = Lambda(lambda x: x * 0.0)(prc)
 
             helper = Concatenate()([information_set, strategy])
             if j == 0:
@@ -120,35 +123,17 @@ def Deep_Hedging_Model_LSTM(N=None, d=None, m=None, \
             helper1 = tf.stack(helper, axis=1)
             #
             # Determine if the strategy function depends on time t or not.
-            if not share_stretegy_across_time:
-                for k in range(d):
-                    if k == d - 1:
-                        helper1 = LSTM(m, return_sequences=False,
-                                       kernel_initializer=kernel_initializer,
-                                       bias_initializer=he_uniform())(helper1, training=True)
-                        helper1 = Dense(1, kernel_initializer=kernel_initializer,
-                                        bias_initializer=he_uniform())(helper1, training=True)
+            # Strategy does not depend on t so there's only a single
+            # layer at t = 0
+            strategy_layer = Strategy_Layer(d=d, m=m,
+                                            use_batch_norm=use_batch_norm, \
+                                            kernel_initializer=kernel_initializer, \
+                                            activation_dense=activation_dense, \
+                                            activation_output=activation_output,
+                                            delta_constraint=delta_constraint, \
+                                            day=j)
 
-                        helper1 = BatchNormalization(momentum=0.99,
-                                                     trainable=True)(helper1, training=True)
-                    else:
-                        helper1 = LSTM(m, return_sequences=True,
-                                       kernel_initializer=kernel_initializer,
-                                       bias_initializer=he_uniform())(helper1, training=True)
-                strategyhelper = helper1
-            else:
-                if j == 0:
-                    # Strategy does not depend on t so there's only a single
-                    # layer at t = 0
-                    strategy_layer = Strategy_Layer(d=d, m=m,
-                                                    use_batch_norm=use_batch_norm, \
-                                                    kernel_initializer=kernel_initializer, \
-                                                    activation_dense=activation_dense, \
-                                                    activation_output=activation_output,
-                                                    delta_constraint=delta_constraint, \
-                                                    day=j)
-
-            # strategyhelper = strategy_layer(helper1)
+            strategyhelper = strategy_layer(helper1)
 
             # strategy_-1 is set to 0
             # delta_strategy = strategy_{t+1} - strategy_t

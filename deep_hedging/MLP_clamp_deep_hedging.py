@@ -84,9 +84,6 @@ class Strategy_Layer(tf.keras.layers.Layer):
                 output = tf.cond(condition, lambda: (b_l + b_u) / 2,
                                  lambda: K.clip(input[..., 1], min_value=min, max_value=max))
 
-                delta_min, delta_max = self.delta_constraint
-                output = Lambda(lambda x: (delta_max - delta_min) * x + delta_min)(output)
-
             else:
                 output = LeakyReLU(alpha=0.001)(output)
                 b_l = output[..., 0]
@@ -110,8 +107,8 @@ class Strategy_Layer(tf.keras.layers.Layer):
                 output = tf.cond(condition, lambda: (b_l + b_u) / 2,
                                  lambda: K.clip(input[..., 1], min_value=min, max_value=max))
 
-                delta_min, delta_max = self.delta_constraint
-                output = Lambda(lambda x: (delta_max - delta_min) * x + delta_min)(output)
+                # delta_min, delta_max = self.delta_constraint
+                # output = Lambda(lambda x: (delta_max - delta_min) * x + delta_min)(output)
 
             else:
                 b_l = Activation(self.activation_output)(output[..., 0])
@@ -127,11 +124,10 @@ class Strategy_Layer(tf.keras.layers.Layer):
 
 def Deep_Hedging_Model_MLP_CLAMP(N=None, d=None, m=None, delta=None, \
                                  risk_free=None, dt=None, initial_wealth=0.0, epsilon=0.0, \
-                                 final_period_cost=False, strategy_type=None, use_batch_norm=None, \
+                                 final_period_cost=False, use_batch_norm=None, \
                                  kernel_initializer="he_uniform", \
                                  activation_dense="relu", activation_output="linear",
-                                 delta_constraint=None, share_stretegy_across_time=False,
-                                 cost_structure="proportional", maxT=0):
+                                 delta_constraint=None, cost_structure="proportional", maxT=0):
     # State variables.
     prc = Input(shape=(1,), name="prc_0")
     information_set = Input(shape=(1,), name="information_set_0")
@@ -139,40 +135,22 @@ def Deep_Hedging_Model_MLP_CLAMP(N=None, d=None, m=None, delta=None, \
     inputs = [prc, information_set, delta_BS]
     for j in range(N + 1):
         if j < N:
-            # Define the inputs for the strategy layers here.
-            if strategy_type == "simple":
-                helper1 = information_set
-            elif strategy_type == "recurrent":
-                if j == 0:
-                    # Tensorflow hack to deal with the dimension problem.
-                    #   Strategy at t = -1 should be 0. 
-                    # There is probably a better way but this works.
-                    # Constant tensor doesn't work.
-                    strategy = Lambda(lambda x: x * 0.0)(prc)
+            if j == 0:
+                # Tensorflow hack to deal with the dimension problem.
+                #   Strategy at t = -1 should be 0.
+                # There is probably a better way but this works.
+                # Constant tensor doesn't work.
+                strategy = Lambda(lambda x: x * 0.0)(prc)
 
-                # delta = delta_BS
-                helper1 = Concatenate()([information_set, strategy])
+            # delta = delta_BS
+            helper1 = Concatenate()([information_set, strategy])
 
             # Determine if the strategy function depends on time t or not.
-            if not share_stretegy_across_time:
-                strategy_layer = Strategy_Layer(d=d, m=m, \
-                                                use_batch_norm=use_batch_norm, \
-                                                kernel_initializer=kernel_initializer, \
-                                                activation_dense=activation_dense, \
-                                                activation_output=activation_output,
-                                                delta_constraint=delta_constraint, \
-                                                day=j)
-            else:
-                if j == 0:
-                    # Strategy does not depend on t so there's only a single
-                    # layer at t = 0
-                    strategy_layer = Strategy_Layer(d=d, m=m, \
-                                                    use_batch_norm=use_batch_norm, \
-                                                    kernel_initializer=kernel_initializer, \
-                                                    activation_dense=activation_dense, \
-                                                    activation_output=activation_output,
-                                                    delta_constraint=delta_constraint, \
-                                                    day=j)
+            strategy_layer = Strategy_Layer(d=d, m=m, use_batch_norm=use_batch_norm,
+                                            kernel_initializer=kernel_initializer,
+                                            activation_dense=activation_dense,
+                                            activation_output=activation_output,
+                                            delta_constraint=delta_constraint, day=j)
 
             strategyhelper = strategy_layer(helper1, delta_BS)  # delta_BS[:,j]
             strategyhelper = tf.expand_dims(strategyhelper, axis=1)
