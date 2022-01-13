@@ -67,7 +67,7 @@ class Strategy_Layer(tf.keras.layers.Layer):
     def call(self, input, delta):
         for i in range(self.d):
             if i == 0:
-                output = self.intermediate_lstm[i](tf.expand_dims(input[:, 0], axis=1))
+                output = self.intermediate_lstm[i](tf.expand_dims(input[:, :, 0], axis=1))
             else:
                 output = self.intermediate_lstm[i](output)
 
@@ -92,7 +92,7 @@ class Strategy_Layer(tf.keras.layers.Layer):
                 condition = tf.math.greater(b_l, b_u)[0]
 
                 output = tf.cond(condition, lambda: (b_l + b_u) / 2,
-                                 lambda: K.clip(input[..., 1], min_value=min, max_value=max))
+                                 lambda: K.clip(input[..., -1, 1], min_value=min, max_value=max))
 
 
             else:
