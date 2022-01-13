@@ -62,9 +62,9 @@ class Strategy_Layer(tf.keras.layers.Layer):
 
         for i in range(self.d):
             if i == 0:
-                output = self.intermediate_dense[i](input)
+                output = self.intermediate_lstm[i](input)
             else:
-                output = self.intermediate_dense[i](output)
+                output = self.intermediate_lstm[i](output)
 
             if self.use_batch_norm:
                 # Batch normalization.
