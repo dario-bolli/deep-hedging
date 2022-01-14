@@ -32,12 +32,9 @@ import tensorflow.keras.backend as K
 
 import matplotlib.pyplot as plt
 
-from stochastic_processes import BlackScholesProcess
-from instruments import EuropeanCall
 from deep_hedging import *  # Deep_Hedging_Model_LSTM, Deep_Hedging_Model_Transformer, Delta_SubModel
 
-from loss_metrics import Entropy, CVaR
-from utilities import train_test_split
+from utilities import Entropy, CVaR, EuropeanCall, BlackScholesProcess, train_test_split
 
 import argparse
 
