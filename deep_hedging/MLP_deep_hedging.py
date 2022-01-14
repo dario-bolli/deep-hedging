@@ -93,17 +93,13 @@ def Deep_Hedging_Model(N=None, d=None, m=None,
 
     for j in range(N + 1):
         if j < N:
-            # Define the inputs for the strategy layers here.
+            # Define the inputs for the strategy layers.
             if j == 0:
-                # Tensorflow hack to deal with the dimension problem.
                 #   Strategy at t = -1 should be 0.
-                # There is probably a better way but this works.
-                # Constant tensor doesn't work.
                 strategy = Lambda(lambda x: x * 0.0)(prc)
 
             helper1 = Concatenate()([information_set, strategy])
 
-            # Determine if the strategy function depends on time t or not.
             strategy_layer = Strategy_Layer(d=d, m=m,
                                             use_batch_norm=use_batch_norm,
                                             kernel_initializer=kernel_initializer,
@@ -114,7 +110,6 @@ def Deep_Hedging_Model(N=None, d=None, m=None,
 
             strategyhelper = strategy_layer(helper1)
 
-            # strategy_-1 is set to 0
             # delta_strategy = strategy_{t+1} - strategy_t
             if j == 0:
                 delta_strategy = strategyhelper
@@ -127,7 +122,6 @@ def Deep_Hedging_Model(N=None, d=None, m=None,
                 costs = Dot(axes=1)([absolutechanges, prc])
                 costs = Lambda(lambda x: epsilon * x, name="cost_" + str(j))(costs)
             elif cost_structure == "constant":
-                # Tensorflow hack..
                 costs = Lambda(lambda x: epsilon + x * 0.0)(prc)
 
             if j == 0:
@@ -155,8 +149,6 @@ def Deep_Hedging_Model(N=None, d=None, m=None,
             else:
                 inputs += [prc]
         else:
-            # The paper assumes no transaction costs for the final period 
-            # when the position is liquidated.
             if final_period_cost:
                 if cost_structure == "proportional":
                     # Proportional transaction cost
@@ -164,7 +156,6 @@ def Deep_Hedging_Model(N=None, d=None, m=None,
                     costs = Dot(axes=1)([absolutechanges, prc])
                     costs = Lambda(lambda x: epsilon * x, name="cost_" + str(j))(costs)
                 elif cost_structure == "constant":
-                    # Tensorflow hack..
                     costs = Lambda(lambda x: epsilon + x * 0.0)(prc)
 
                 wealth = Subtract(name="costDot_" + str(j))([wealth, costs])

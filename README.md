@@ -13,5 +13,6 @@ The following package are mandatory to run the code:
 - tensorflow
 - keras-tcn 
 - QuantLib
+- sklearn
 which can be installed through pip
 

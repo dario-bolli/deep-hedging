@@ -6,7 +6,6 @@ from tensorflow.keras.initializers import he_normal, Zeros, he_uniform, Truncate
 import tensorflow.keras.backend as K
 import tensorflow as tf
 import numpy as np
-import sys
 
 intitalizer_dict = {
     "he_normal": he_normal(),
@@ -107,12 +106,9 @@ def Deep_Hedging_Model_LSTM(N=None, d=None, m=None, \
 
     for j in range(N + 1):
         if j < N:
-
+            # Define the inputs for the strategy layers.
             if j == 0:
-                # Tensorflow hack to deal with the dimension problem.
                 #   Strategy at t = -1 should be 0.
-                # There is probably a better way but this works.
-                # Constant tensor doesn't work.
                 strategy = Lambda(lambda x: x * 0.0)(prc)
 
             helper = Concatenate()([information_set, strategy])
@@ -121,10 +117,7 @@ def Deep_Hedging_Model_LSTM(N=None, d=None, m=None, \
             past_strategy.append(helper)
             helper = past_strategy[-maxT:]
             helper1 = tf.stack(helper, axis=1)
-            #
-            # Determine if the strategy function depends on time t or not.
-            # Strategy does not depend on t so there's only a single
-            # layer at t = 0
+
             strategy_layer = Strategy_Layer(d=d, m=m,
                                             use_batch_norm=use_batch_norm, \
                                             kernel_initializer=kernel_initializer, \
@@ -135,7 +128,6 @@ def Deep_Hedging_Model_LSTM(N=None, d=None, m=None, \
 
             strategyhelper = strategy_layer(helper1)
 
-            # strategy_-1 is set to 0
             # delta_strategy = strategy_{t+1} - strategy_t
             if j == 0:
                 delta_strategy = strategyhelper
@@ -148,7 +140,6 @@ def Deep_Hedging_Model_LSTM(N=None, d=None, m=None, \
                 costs = Dot(axes=1)([absolutechanges, prc])
                 costs = Lambda(lambda x: epsilon * x, name="cost_" + str(j))(costs)
             elif cost_structure == "constant":
-                # Tensorflow hack..
                 costs = Lambda(lambda x: epsilon + x * 0.0)(prc)
 
             if j == 0:
@@ -176,8 +167,6 @@ def Deep_Hedging_Model_LSTM(N=None, d=None, m=None, \
             else:
                 inputs += [prc]
         else:
-            # The paper assumes no transaction costs for the final period
-            # when the position is liquidated.
             if final_period_cost:
                 if cost_structure == "proportional":
                     # Proportional transaction cost
@@ -185,7 +174,6 @@ def Deep_Hedging_Model_LSTM(N=None, d=None, m=None, \
                     costs = Dot(axes=1)([absolutechanges, prc])
                     costs = Lambda(lambda x: epsilon * x, name="cost_" + str(j))(costs)
                 elif cost_structure == "constant":
-                    # Tensorflow hack..
                     costs = Lambda(lambda x: epsilon + x * 0.0)(prc)
 
                 wealth = Subtract(name="costDot_" + str(j))([wealth, costs])

@@ -6,7 +6,6 @@ from tensorflow.keras.initializers import he_normal, Zeros, he_uniform, Truncate
 import tensorflow.keras.backend as K
 import tensorflow as tf
 import numpy as np
-import sys
 
 intitalizer_dict = {
     "he_normal": he_normal(),
@@ -97,13 +96,9 @@ def Deep_Hedging_Model_Transformer(N=None, d=None, m=None, \
 
     for j in range(N + 1):
         if j < N:
-            # Define the inputs for the strategy layers here.
-
+            # Define the inputs for the strategy layers.
             if j == 0:
-                # Tensorflow hack to deal with the dimension problem.
                 #   Strategy at t = -1 should be 0.
-                # There is probably a better way but this works.
-                # Constant tensor doesn't work.
                 strategy = Lambda(lambda x: x * 0.0)(prc)
             helper = Concatenate()([information_set, strategy])
             if j == 0:
@@ -112,7 +107,6 @@ def Deep_Hedging_Model_Transformer(N=None, d=None, m=None, \
             helper = past_strategy[-maxT:]
             helper1 = tf.stack(helper, axis=1)
 
-            # Determine if the strategy function depends on time t or not.
             T = min(maxT, len(past_strategy))  # is set to maxT or less for the first time step
 
             for k in range(d):
@@ -121,23 +115,18 @@ def Deep_Hedging_Model_Transformer(N=None, d=None, m=None, \
                     x = LayerNormalization(epsilon=1e-6)(helper1)
 
                     x = MultiHeadAttention(
-                        key_dim=T, num_heads=num_heads, dropout=dropout
-                    )(x, x)
+                        key_dim=T, num_heads=num_heads, dropout=dropout)(x, x)
                     x = Dropout(dropout)(x)
                     # Feed Forward Part
                     x = LayerNormalization(epsilon=1e-6)(x)
-                    x = Conv1D(filters=T, kernel_size=1, activation=activation_dense)(x)
+                    x = Conv1D(filters=T, kernel_size=1)(x)
                     x = Dropout(dropout)(x)
                     x = Conv1D(filters=helper1.shape[-1], kernel_size=1)(x)
-                else:
-                    helper1 = LSTM(m, return_sequences=True,
-                                   kernel_initializer=kernel_initializer,
-                                   bias_initializer=he_uniform())(helper1, training=True)
+
             x = Reshape((x.shape[1] * x.shape[2],))(x)
             strategyhelper = Dense(1, kernel_initializer=kernel_initializer,
                                    bias_initializer=he_uniform(), activation=activation_output)(x)
 
-            # strategy_-1 is set to 0
             # delta_strategy = strategy_{t+1} - strategy_t
             if j == 0:
                 delta_strategy = strategyhelper
@@ -150,7 +139,6 @@ def Deep_Hedging_Model_Transformer(N=None, d=None, m=None, \
                 costs = Dot(axes=1)([absolutechanges, prc])
                 costs = Lambda(lambda x: epsilon * x, name="cost_" + str(j))(costs)
             elif cost_structure == "constant":
-                # Tensorflow hack..
                 costs = Lambda(lambda x: epsilon + x * 0.0)(prc)
 
             if j == 0:
@@ -178,8 +166,6 @@ def Deep_Hedging_Model_Transformer(N=None, d=None, m=None, \
             else:
                 inputs += [prc]
         else:
-            # The paper assumes no transaction costs for the final period
-            # when the position is liquidated.
             if final_period_cost:
                 if cost_structure == "proportional":
                     # Proportional transaction cost
@@ -187,7 +173,6 @@ def Deep_Hedging_Model_Transformer(N=None, d=None, m=None, \
                     costs = Dot(axes=1)([absolutechanges, prc])
                     costs = Lambda(lambda x: epsilon * x, name="cost_" + str(j))(costs)
                 elif cost_structure == "constant":
-                    # Tensorflow hack..
                     costs = Lambda(lambda x: epsilon + x * 0.0)(prc)
 
                 wealth = Subtract(name="costDot_" + str(j))([wealth, costs])

@@ -2,17 +2,11 @@ from tensorflow.keras.layers import Input, Dense, LSTM, Concatenate, Subtract, \
     Lambda, Add, Dot, BatchNormalization, Activation, LeakyReLU
 from tensorflow.keras.models import Model
 from tensorflow.keras import layers
-# import keras
 from tensorflow.keras.initializers import he_normal, Zeros, he_uniform, TruncatedNormal
 import tensorflow.keras.backend as K
 import tensorflow as tf
 import numpy as np
-from utilities import CVaR
-from utilities import EuropeanCall
-import QuantLib as ql
 
-# from clamp import Clamp
-# import torch.nn.functional as fn
 
 intitalizer_dict = {
     "he_normal": he_normal(),
@@ -83,52 +77,27 @@ class Strategy_Layer(tf.keras.layers.Layer):
         output = self.output_dense(output)
 
         if self.activation_output == "leaky_relu":
-            if self.delta_constraint is not None:
-                output = LeakyReLU(alpha=0.001)(output)
-                b_l = output[..., 0]
-                b_u = output[..., 1]
-                min = tf.reshape(delta, shape=(-1,)) - b_l
-                max = tf.reshape(delta, shape=(-1,)) + b_u
-                condition = tf.math.greater(b_l, b_u)[0]
-
-                output = tf.cond(condition, lambda: (b_l + b_u) / 2,
-                                 lambda: K.clip(input[..., -1, 1], min_value=min, max_value=max))
-
-
-            else:
-                output = LeakyReLU(alpha=0.001)(output)
-                b_l = output[..., 0]
-                b_u = output[..., 1]
-                min = tf.reshape(delta, shape=(-1,)) - b_l
-                max = tf.reshape(delta, shape=(-1,)) + b_u
-                condition = tf.math.greater(b_l, b_u)[0]
-                output = tf.cond(condition, lambda: (b_l + b_u) / 2,
-                                 lambda: K.clip(input[..., 1], min_value=min, max_value=max))
+            output = LeakyReLU(alpha=0.001)(output)
+            b_l = output[..., 0]
+            b_u = output[..., 1]
+            min = tf.reshape(delta, shape=(-1,)) - b_l
+            max = tf.reshape(delta, shape=(-1,)) + b_u
+            
+            condition = tf.math.greater(b_l, b_u)[0]
+            output = tf.cond(condition, lambda: (b_l + b_u) / 2,
+                            lambda: K.clip(input[..., -1, 1], min_value=min, max_value=max))
 
         elif self.activation_output == "sigmoid" or self.activation_output == "tanh" or \
                 self.activation_output == "hard_sigmoid":
-            # Enforcing hedge constraints (liquidity, costs, ..)
-            if self.delta_constraint is not None:
-                b_l = Activation(self.activation_output)(output[..., 0])
-                b_u = Activation(self.activation_output)(output[..., 1])
-                min = tf.reshape(delta, shape=(-1,)) - b_l
-                max = tf.reshape(delta, shape=(-1,)) + b_u
+                
+            b_l = Activation(self.activation_output)(output[..., 0])
+            b_u = Activation(self.activation_output)(output[..., 1])
+            min = tf.reshape(delta, shape=(-1,)) - b_l
+            max = tf.reshape(delta, shape=(-1,)) + b_u
 
-                condition = tf.math.greater(b_l, b_u)[0]
-                output = tf.cond(condition, lambda: (b_l + b_u) / 2,
-                                 lambda: K.clip(input[..., 1], min_value=min, max_value=max))
-
-                delta_min, delta_max = self.delta_constraint
-                output = Lambda(lambda x: (delta_max - delta_min) * x + delta_min)(output)
-
-            else:
-                b_l = Activation(self.activation_output)(output[..., 0])
-                b_u = Activation(self.activation_output)(output[..., 1])
-                min = tf.reshape(delta, shape=(-1,)) - b_l
-                max = tf.reshape(delta, shape=(-1,)) + b_u
-                condition = tf.math.greater(b_l, b_u)[0]
-                output = tf.cond(condition, lambda: (b_l + b_u) / 2,
-                                 lambda: K.clip(input[..., 1], min_value=min, max_value=max))  # input
+            condition = tf.math.greater(b_l, b_u)[0]
+            output = tf.cond(condition, lambda: (b_l + b_u) / 2,
+                            lambda: K.clip(input[..., -1, 1], min_value=min, max_value=max))
         return output
 
 
@@ -148,12 +117,9 @@ def Deep_Hedging_Model_LSTM_CLAMP(N=None, d=None, m=None, delta=None, \
 
     for j in range(N + 1):
         if j < N:
-            # Define the inputs for the strategy layers here.
+            # Define the inputs for the strategy layers.
             if j == 0:
-                # Tensorflow hack to deal with the dimension problem.
                 #   Strategy at t = -1 should be 0.
-                # There is probably a better way but this works.
-                # Constant tensor doesn't work.
                 strategy = Lambda(lambda x: x * 0.0)(prc)
                 helper1 = Concatenate()([information_set, strategy])
                 sequence.append(helper1)
@@ -162,7 +128,6 @@ def Deep_Hedging_Model_LSTM_CLAMP(N=None, d=None, m=None, delta=None, \
             sequence.append(helper1)
             helper = tf.stack(sequence[-maxT:], axis=1)
 
-            # Determine if the strategy function depends on time t or not.
             strategy_layer = Strategy_Layer(d=d, m=m, \
                                             use_batch_norm=use_batch_norm, \
                                             kernel_initializer=kernel_initializer, \
@@ -171,9 +136,9 @@ def Deep_Hedging_Model_LSTM_CLAMP(N=None, d=None, m=None, delta=None, \
                                             delta_constraint=delta_constraint, \
                                             day=j)
 
-            strategyhelper = strategy_layer(helper, delta_BS)  # delta_BS[:,j]
+            strategyhelper = strategy_layer(helper, delta_BS)
             strategyhelper = tf.expand_dims(strategyhelper, axis=1)
-            # strategy_-1 is set to 0
+            
             # delta_strategy = strategy_{t+1} - strategy_t
             if j == 0:
                 delta_strategy = strategyhelper
@@ -187,7 +152,6 @@ def Deep_Hedging_Model_LSTM_CLAMP(N=None, d=None, m=None, delta=None, \
                 costs = Dot(axes=1)([absolutechanges, prc])
                 costs = Lambda(lambda x: epsilon * x, name="cost_" + str(j))(costs)
             elif cost_structure == "constant":
-                # Tensorflow hack..
                 costs = Lambda(lambda x: epsilon + x * 0.0)(prc)
 
             if j == 0:
@@ -215,8 +179,6 @@ def Deep_Hedging_Model_LSTM_CLAMP(N=None, d=None, m=None, delta=None, \
             else:
                 inputs += [prc, delta_BS]
         else:
-            # The paper assumes no transaction costs for the final period 
-            # when the position is liquidated.
             if final_period_cost:
                 if cost_structure == "proportional":
                     # Proportional transaction cost
@@ -224,7 +186,6 @@ def Deep_Hedging_Model_LSTM_CLAMP(N=None, d=None, m=None, delta=None, \
                     costs = Dot(axes=1)([absolutechanges, prc])
                     costs = Lambda(lambda x: epsilon * x, name="cost_" + str(j))(costs)
                 elif cost_structure == "constant":
-                    # Tensorflow hack..
                     costs = Lambda(lambda x: epsilon + x * 0.0)(prc)
 
                 wealth = Subtract(name="costDot_" + str(j))([wealth, costs])
@@ -237,7 +198,7 @@ def Deep_Hedging_Model_LSTM_CLAMP(N=None, d=None, m=None, delta=None, \
             payoff = Input(shape=(1,), name="payoff")
             inputs += [payoff]
 
-            wealth = Add(name="wealth_" + str(j))([wealth, payoff])
+            wealth = Add(name="wealth_" + str(j+1))([wealth, payoff])
     return Model(inputs=inputs, outputs=wealth)
 
 

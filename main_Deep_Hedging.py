@@ -39,9 +39,6 @@ from utilities import Entropy, CVaR, EuropeanCall, BlackScholesProcess, train_te
 import argparse
 
 
-def cvar(wealth, w, alpha):
-    return np.mean(w + (np.maximum(-wealth - w, 0) / (1 - alpha)))
-
 
 if __name__ == '__main__':
     function_mappings = {
@@ -119,6 +116,10 @@ if __name__ == '__main__':
 
     parser.add_argument('--acti_output', default="sigmoid", type=str,
                         help='activation_output either sigmoid or leaky_ReLu default : sigmoid')
+    
+    parser.add_argument('--load_data', dest='load_data', action='store_true',
+                        help='set to True if you want to load data (WARNING: the data file should ' 
+                        'be named Generated_Data.npy and the BlackScholes delta file Generated_BS.npy (or changed in main accordingly)')
 
     # parser.print_help()
     args = parser.parse_args()
@@ -155,9 +156,7 @@ if __name__ == '__main__':
             "invalid info_set inputs, must be one of S, log_S, normalized_log_S, your input: %s, set to default" % args.info_set)
         information_set = "normalized_log_S"
 
-        # Loss function
-    # loss_type = "CVaR" (Expected Shortfall) -> loss_param = alpha 
-    # loss_type = "Entropy" -> loss_param = lambda 
+    # Loss function
 
     loss_type = args.loss
     if args.loss in ['Entropy', 'CVaR']:
@@ -206,10 +205,22 @@ if __name__ == '__main__':
     # S0 is init stock price, sigma = Volatility, risk_free = ?, ?,time Day convention
     stochastic_process = BlackScholesProcess(s0=S0, sigma=sigma, risk_free=risk_free, \
                                              dividend=dividend, day_count=day_count, seed=seed)
-
-    #S = stochastic_process.gen_path(maturity, N, nobs)
-    S = np.load("Generated_Data.npy")
-    delta_BS = np.load("Generated_BS.npy")
+    load_data = args.load_data
+    if load_data:
+        # Load the stock prices (and associated BlackSchole's delta)
+        S = np.load("Generated_Data.npy")
+        delta_BS = np.load("Generated_BS.npy")
+        trade_set = np.stack((S), axis=1)  # Trading set
+    else:
+        # Generate the stock prices
+        S = stochastic_process.gen_path(maturity, N, nobs)
+        trade_set = np.stack((S), axis=1)  # Trading set
+        call = EuropeanCall()
+        delta_BS = np.transpose(call.get_BS_delta(S=np.transpose(trade_set), sigma=sigma,
+                                              risk_free=risk_free, dividend=dividend, K=strike,
+                                              exercise_date=maturity_date,
+                                              calculation_date=calculation_date,
+                                              day_count=day_count, dt=dt))
     print("\n\ns0 = " + str(S0))
     print("sigma = " + str(sigma))
     print("risk_free = " + str(risk_free) + "\n")
@@ -217,27 +228,22 @@ if __name__ == '__main__':
     print("Length of each time step = " + "1/365\n")
     print("Simulation Done!")
 
-    # @title <font color='Blue'>**Prepare data to be fed into the deep hedging algorithm.**</font>
+    # Prepare data to be fed into the deep hedging algorithm
 
     payoff_T = payoff_func(S[:, -1])  # Payoff of the call option
 
-    trade_set = np.stack((S), axis=1)  # Trading set
     print(information_set)
     if information_set == "S":
-        info = np.stack((S), axis=1)  # Information set
+        info = np.stack((S), axis=1)  
     elif information_set == "log_S":
         info = np.stack((np.log(S)), axis=1)
     elif information_set == "normalized_log_S":
-        info = np.stack((np.log(S / S0)), axis=1)
+        info = np.stack((np.log(S / S0)), axis=1)   # Information set
     else:
         raise Exception("There is a bug somewhere in the code, invalid information_set, yet it should have been taken "
                         "care of by the parser")
-    # call = EuropeanCall()
-    # delta_BS = np.transpose(call.get_BS_delta(S=np.transpose(trade_set), sigma=sigma,
-    #                                           risk_free=risk_free, dividend=dividend, K=strike,
-    #                                           exercise_date=maturity_date,
-    #                                           calculation_date=calculation_date,
-    #                                           day_count=day_count, dt=dt))
+    
+    
     # # Structure of xtrain:
     #   1) Trade set: [S]
     #   2) Information set: [S]
@@ -329,6 +335,7 @@ if __name__ == '__main__':
 
     print("Finished running deep hedging algorithm!")
 
+    # Model Evaluation
     call = EuropeanCall()
 
     price_BS = call.get_BS_price(S=S_test[0], sigma=sigma,
@@ -357,7 +364,6 @@ if __name__ == '__main__':
     print("The Deep Hedging price is %2.3f." % nn_price)
 
     print("Plotting PnL")
-    np.save("PnL_BS",PnL_BS)
     bar1 = PnL_BS + risk_neutral_price
     Var = model_recurrent.predict(xtest, batch_size=batch_size).squeeze()
     bar2 = Var + risk_neutral_price
@@ -395,15 +401,15 @@ if __name__ == '__main__':
     output['maxT'] = maxT
     output['model'] = args.input_model
     output['epsilon'] = epsilon
-    output['CVar99'] = cvar(Var, risk_neutral_price, 0.99)
-    output['CVar95'] = cvar(Var, risk_neutral_price, 0.95)
-    output['CVar90'] = cvar(Var, risk_neutral_price, 0.90)
-    output['CVar80'] = cvar(Var, risk_neutral_price, 0.80)
-    output['CVar50'] = cvar(Var, risk_neutral_price, 0.50)
-    output['CVar20'] = cvar(Var, risk_neutral_price, 0.20)
-    output['CVar10'] = cvar(Var, risk_neutral_price, 0.10)
-    output['CVar5'] = cvar(Var, risk_neutral_price, 0.05)
-    output['CVar1'] = cvar(Var, risk_neutral_price, 0.01)
+    output['CVar99'] = CVaR(Var, risk_neutral_price, 0.99)
+    output['CVar95'] = CVaR(Var, risk_neutral_price, 0.95)
+    output['CVar90'] = CVaR(Var, risk_neutral_price, 0.90)
+    output['CVar80'] = CVaR(Var, risk_neutral_price, 0.80)
+    output['CVar50'] = CVaR(Var, risk_neutral_price, 0.50)
+    output['CVar20'] = CVaR(Var, risk_neutral_price, 0.20)
+    output['CVar10'] = CVaR(Var, risk_neutral_price, 0.10)
+    output['CVar5'] = CVaR(Var, risk_neutral_price, 0.05)
+    output['CVar1'] = CVaR(Var, risk_neutral_price, 0.01)
 
     output['Var99'] = np.quantile(Var, 0.99)
     output['Var95'] = np.quantile(Var, 0.95)
