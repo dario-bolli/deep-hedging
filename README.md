@@ -10,4 +10,5 @@ To run a model, you can simply run the main_Deep_Hedging.py, and specify the fol
 ![main arguments](https://gitlab.ethz.ch/dbolli/deep-hedging/-/blob/master/main_args.jpg)
 Other options such as the volatility of the generated datas, or the strike price can be set at the begining of the main.\\
 
+![](deep-hedging/-/blob/master/main_args.jpg)
 
