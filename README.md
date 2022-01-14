@@ -9,4 +9,9 @@ To run a model, you can simply run the main_Deep_Hedging.py, and specify the fol
 ![main arguments](https://gitlab.ethz.ch/dbolli/deep-hedging/-/blob/master/main_args.jpg), or enter main_Deep_Hedging.py -h to display the possible arguments
 Other options such as the volatility of the generated datas, or the strike price can be set at the begining of the main.\\
 
+The following package are mandatory to run the code:
+- tensorflow
+- keras-tcn 
+- QuantLib
+which can be installed through pip
 
