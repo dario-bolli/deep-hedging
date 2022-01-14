@@ -7,8 +7,8 @@ from tensorflow.keras.initializers import he_normal, Zeros, he_uniform, Truncate
 import tensorflow.keras.backend as K
 import tensorflow as tf
 import numpy as np
-from loss_metrics import CVaR
-from instruments import EuropeanCall
+from utilities import CVaR
+from utilities import EuropeanCall
 import QuantLib as ql
 
 # from clamp import Clamp
