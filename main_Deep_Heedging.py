@@ -360,10 +360,11 @@ if __name__ == '__main__':
     print("The Deep Hedging price is %2.3f." % nn_price)
 
     print("Plotting PnL")
+    np.save("PnL_BS",PnL_BS)
     bar1 = PnL_BS + risk_neutral_price
     Var = model_recurrent.predict(xtest, batch_size=batch_size).squeeze()
     bar2 = Var + risk_neutral_price
-### HEERE
+
     # Plot Black-Scholes PnL and Deep Hedging PnL (with risk_neutral_price charged on both).
     fig_PnL = plt.figure(dpi=125, facecolor='w')
     fig_PnL.suptitle("Black-Scholes PnL vs Deep Hedging PnL \n",
